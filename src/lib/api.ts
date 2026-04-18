@@ -1264,3 +1264,84 @@ export function useDeleteCompliance(bidId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance", bidId] }),
   });
 }
+
+// =====================================================================
+// PR4 — Web chat panel. Talks to the same agent as Telegram via the
+// existing POST /chat endpoint. Voice in the browser uses the Web
+// Speech API (Chrome + mobile Safari) — no backend transcription
+// dependency for the MVP.
+// =====================================================================
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  interface: string;
+  timestamp: string;
+}
+
+export function useChatHistory(sessionId: string) {
+  return useQuery({
+    queryKey: ["chat-history", sessionId],
+    queryFn: async () => {
+      const resp = await apiFetch<{ messages: ChatMessage[] }>(
+        `/api/dashboard/chat/${encodeURIComponent(sessionId)}`,
+      );
+      return resp.messages;
+    },
+    enabled: !!sessionId,
+    // Cheap, frequent refresh so Telegram-side messages appear quickly
+    // when the same session_id is shared with the bot.
+    staleTime: 3_000,
+    refetchInterval: 6_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// The /chat endpoint sits at the API root, NOT under /api/dashboard,
+// because it predates the dashboard router. Long timeout — agent runs
+// can take 5-30s when tool-calling.
+export async function sendChatMessage(
+  message: string,
+  sessionId: string,
+): Promise<string> {
+  const url = new URL("/chat", BASE_URL);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message, session_id: sessionId }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data.detail ?? detail;
+    } catch {}
+    throw new Error(`chat failed: ${res.status} ${detail}`);
+  }
+  const data = await res.json();
+  return (data?.response as string) ?? "";
+}
+
+export function useSendChat(sessionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) => sendChatMessage(message, sessionId),
+    onSuccess: () => {
+      // History endpoint will pick up both the user + assistant rows
+      // the agent persisted. Also invalidate everything else the agent
+      // might have touched (deals, contacts, etc.) — a chat turn often
+      // ends with "I moved Bosch to negotiation" and the kanban needs
+      // to reflect that without a manual refresh.
+      qc.invalidateQueries({ queryKey: ["chat-history", sessionId] });
+      qc.invalidateQueries({ queryKey: ["pipeline"] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["deal"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["companies-list"] });
+      qc.invalidateQueries({ queryKey: ["bids-list"] });
+    },
+  });
+}
