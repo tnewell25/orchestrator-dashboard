@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -33,6 +33,7 @@ export interface MeddicData {
 }
 
 export interface Stakeholder {
+  id: string;
   contact_id: string;
   role: string;
   sentiment: string;
@@ -148,6 +149,28 @@ async function apiFetch<T>(path: string, params?: Record<string, string>): Promi
   return res.json();
 }
 
+async function apiWrite<T>(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const url = new URL(path, BASE_URL);
+  const res = await fetch(url.toString(), {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data.detail ?? detail;
+    } catch {}
+    throw new Error(`API ${method} ${path} ${res.status}: ${detail}`);
+  }
+  return res.json();
+}
+
 export function fetchPipeline(): Promise<PipelineResponse> {
   return apiFetch<PipelineResponse>("/api/dashboard/pipeline");
 }
@@ -183,7 +206,11 @@ export function usePipeline() {
   return useQuery({
     queryKey: ["pipeline"],
     queryFn: fetchPipeline,
-    staleTime: 30_000,
+    // Tight refresh so writes from the Telegram bot show up in the kanban
+    // within ~10s without a manual reload.
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -192,6 +219,9 @@ export function useDealDetail(id: string) {
     queryKey: ["deal", id],
     queryFn: () => fetchDealDetail(id),
     enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -207,7 +237,9 @@ export function useActivity(hours: number = 72) {
   return useQuery({
     queryKey: ["activity", hours],
     queryFn: () => fetchActivity(hours),
-    staleTime: 60_000,
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -223,6 +255,258 @@ export function useUsage(hours: number = 24) {
   return useQuery({
     queryKey: ["usage", hours],
     queryFn: () => fetchUsage(hours),
+    staleTime: 60_000,
+  });
+}
+
+// =====================================================================
+// Mutations — write back to the same tables the bot reads. Optimistic
+// updates make drag-drop feel instant; query invalidation forces a
+// refetch so server-truth wins on reconciliation.
+// =====================================================================
+
+export interface DealCreatePayload {
+  name: string;
+  company_id?: string | null;
+  stage?: string;
+  value_usd?: number;
+  close_date?: string | null;
+  next_step?: string;
+  notes?: string;
+  competitors?: string;
+}
+
+export interface DealPatchPayload {
+  name?: string;
+  stage?: string;
+  value_usd?: number;
+  close_date?: string | null;
+  next_step?: string;
+  notes?: string;
+  notes_append?: string;
+  competitors?: string;
+  company_id?: string | null;
+  economic_buyer_id?: string | null;
+  champion_id?: string | null;
+  metrics?: string;
+  decision_criteria?: string;
+  decision_process?: string;
+  paper_process?: string;
+  pain?: string;
+}
+
+export function useCreateDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: DealCreatePayload) =>
+      apiWrite<{ id: string; name: string; stage: string }>(
+        "POST",
+        "/api/dashboard/deals",
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pipeline"] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+}
+
+export function usePatchDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: DealPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/deals/${id}`,
+        payload,
+      ),
+    // Optimistic stage moves on the kanban — patch the cached pipeline
+    // immediately so the card jumps columns before the round-trip lands.
+    onMutate: async ({ id, stage }) => {
+      if (!stage) return;
+      await qc.cancelQueries({ queryKey: ["pipeline"] });
+      const prev = qc.getQueryData<PipelineResponse>(["pipeline"]);
+      if (!prev) return { prev };
+      const moved = Object.values(prev.stages)
+        .flat()
+        .find((d) => d.id === id);
+      const next: PipelineResponse = {
+        ...prev,
+        stages: Object.fromEntries(
+          Object.entries(prev.stages).map(([s, deals]) => [
+            s,
+            deals.filter((d) => d.id !== id),
+          ]),
+        ),
+      };
+      if (moved) {
+        next.stages[stage] = [{ ...moved, stage }, ...(next.stages[stage] ?? [])];
+      }
+      qc.setQueryData(["pipeline"], next);
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["pipeline"], ctx.prev);
+    },
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["pipeline"] });
+      qc.invalidateQueries({ queryKey: ["deal", vars.id] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+}
+
+export interface ActionCreatePayload {
+  description: string;
+  due_date?: string | null;
+  contact_id?: string | null;
+  source?: string;
+}
+
+export function useCreateAction(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ActionCreatePayload) =>
+      apiWrite<ActionItemData>(
+        "POST",
+        `/api/dashboard/deals/${dealId}/actions`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export interface ActionPatchPayload {
+  description?: string;
+  status?: "open" | "done" | "snoozed";
+  due_date?: string | null;
+}
+
+export function usePatchAction(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: ActionPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/actions/${id}`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+}
+
+export interface StakeholderCreatePayload {
+  contact_id: string;
+  role: string;
+  sentiment?: string;
+  influence?: string;
+  notes?: string;
+}
+
+export function useCreateStakeholder(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: StakeholderCreatePayload) =>
+      apiWrite<{ id: string; deal_id: string }>(
+        "POST",
+        `/api/dashboard/deals/${dealId}/stakeholders`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deal", dealId] }),
+  });
+}
+
+export interface StakeholderPatchPayload {
+  sentiment?: string;
+  influence?: string;
+  role?: string;
+  notes?: string;
+}
+
+export function usePatchStakeholder(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: StakeholderPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/stakeholders/${id}`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deal", dealId] }),
+  });
+}
+
+export interface ContactCreatePayload {
+  name: string;
+  company_id?: string | null;
+  title?: string;
+  email?: string;
+  phone?: string;
+  linkedin?: string;
+  personal_notes?: string;
+}
+
+export function useCreateContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ContactCreatePayload) =>
+      apiWrite<{ id: string; name: string }>(
+        "POST",
+        "/api/dashboard/contacts",
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contacts"] }),
+  });
+}
+
+export interface ContactPatchPayload {
+  name?: string;
+  title?: string;
+  email?: string;
+  phone?: string;
+  linkedin?: string;
+  personal_notes?: string;
+  company_id?: string | null;
+}
+
+export function usePatchContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: ContactPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/contacts/${id}`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contacts"] }),
+  });
+}
+
+// Companies — small helper for create-deal/contact dropdowns
+export interface CompanyOption {
+  id: string;
+  name: string;
+  industry: string;
+}
+
+export function useCompanies(query?: string) {
+  return useQuery({
+    queryKey: ["companies", query],
+    queryFn: async () => {
+      const params = query ? { q: query } : undefined;
+      const resp = await apiFetch<{ companies: CompanyOption[] }>(
+        "/api/dashboard/companies",
+        params,
+      );
+      return resp.companies;
+    },
     staleTime: 60_000,
   });
 }
