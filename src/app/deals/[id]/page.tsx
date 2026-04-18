@@ -2,18 +2,22 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   useDealDetail,
   usePatchDeal,
   useCreateAction,
   usePatchAction,
   usePatchStakeholder,
+  useCreateMeeting,
+  useDeleteEntity,
   type DealDetailResponse,
   type MeddicData,
   type Stakeholder,
   type Meeting,
   type ActionItemData,
 } from '@/lib/api'
+import { useConfirmDestroy } from '@/components/confirm-destroy'
 
 const STAGE_ORDER = [
   'prospect', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost',
@@ -130,10 +134,11 @@ function EditableText({
 // --- Header (stage dropdown + inline value) ---------------------------
 
 function DealHeader({
-  deal, onPatch,
+  deal, onPatch, onDelete,
 }: {
   deal: DealDetailResponse['deal']
   onPatch: (p: Record<string, unknown>) => void
+  onDelete: () => void
 }) {
   return (
     <div className="flex items-start justify-between gap-4 pb-4 border-b border-zinc-200">
@@ -156,20 +161,29 @@ function DealHeader({
         </div>
         <p className="mt-0.5 text-xs text-zinc-500">{deal.company}</p>
       </div>
-      <div className="text-right shrink-0">
-        <EditableText
-          value={String(deal.value_usd || 0)}
-          onSave={(v) => onPatch({ value_usd: Number(v) || 0 })}
-          className="text-sm font-semibold text-zinc-900 tabular-nums"
-        />
-        <span className="text-sm font-semibold text-zinc-900 tabular-nums ml-1">
-          ({formatCurrency(deal.value_usd)})
-        </span>
-        {deal.close_date && (
-          <p className="mt-0.5 text-[11px] text-zinc-400">
-            Close {formatDate(deal.close_date)}
-          </p>
-        )}
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className="text-right">
+          <EditableText
+            value={String(deal.value_usd || 0)}
+            onSave={(v) => onPatch({ value_usd: Number(v) || 0 })}
+            className="text-sm font-semibold text-zinc-900 tabular-nums"
+          />
+          <span className="text-sm font-semibold text-zinc-900 tabular-nums ml-1">
+            ({formatCurrency(deal.value_usd)})
+          </span>
+          {deal.close_date && (
+            <p className="mt-0.5 text-[11px] text-zinc-400">
+              Close {formatDate(deal.close_date)}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 rounded"
+        >
+          Delete deal
+        </button>
       </div>
     </div>
   )
@@ -251,6 +265,7 @@ function StakeholderTable({
   dealId: string
 }) {
   const patch = usePatchStakeholder(dealId)
+  const remove = useDeleteEntity()
 
   if (!stakeholders.length) {
     return <p className="text-xs text-zinc-400 py-3">No stakeholders mapped yet.</p>
@@ -265,12 +280,13 @@ function StakeholderTable({
             <th className="py-1.5 pr-3 font-medium">Title</th>
             <th className="py-1.5 pr-3 font-medium">Role</th>
             <th className="py-1.5 pr-3 font-medium">Sentiment</th>
-            <th className="py-1.5 font-medium">Influence</th>
+            <th className="py-1.5 pr-3 font-medium">Influence</th>
+            <th className="py-1.5 w-6" />
           </tr>
         </thead>
         <tbody>
           {stakeholders.map((s) => (
-            <tr key={s.id} className="border-b border-zinc-100 last:border-0">
+            <tr key={s.id} className="border-b border-zinc-100 last:border-0 group">
               <td className="py-1.5 pr-3 font-medium text-zinc-800">{s.name}</td>
               <td className="py-1.5 pr-3 text-zinc-500">{s.title}</td>
               <td className="py-1.5 pr-3">
@@ -292,7 +308,7 @@ function StakeholderTable({
                   </select>
                 </span>
               </td>
-              <td className="py-1.5 capitalize">
+              <td className="py-1.5 pr-3 capitalize">
                 <select
                   value={s.influence}
                   onChange={(e) => patch.mutate({ id: s.id, influence: e.target.value })}
@@ -302,6 +318,16 @@ function StakeholderTable({
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
+              </td>
+              <td className="py-1.5 text-right">
+                <button
+                  type="button"
+                  onClick={() => remove.mutate({ entity: "stakeholders", id: s.id })}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
+                  title="Remove from deal"
+                >
+                  ×
+                </button>
               </td>
             </tr>
           ))}
@@ -313,35 +339,113 @@ function StakeholderTable({
 
 // --- Meetings ----------------------------------------------------------
 
-function MeetingTimeline({ meetings }: { meetings: Meeting[] }) {
-  if (!meetings.length) {
-    return <p className="text-xs text-zinc-400 py-3">No meetings recorded.</p>
+function MeetingTimeline({ meetings, dealId }: { meetings: Meeting[]; dealId: string }) {
+  const create = useCreateMeeting(dealId)
+  const remove = useDeleteEntity()
+  const [adding, setAdding] = useState(false)
+  const [attendees, setAttendees] = useState('')
+  const [summary, setSummary] = useState('')
+  const [decisions, setDecisions] = useState('')
+
+  const submit = async () => {
+    if (!summary.trim() && !attendees.trim()) return
+    await create.mutateAsync({ attendees, summary, decisions })
+    setAttendees(''); setSummary(''); setDecisions(''); setAdding(false)
   }
+
   const sorted = [...meetings].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   )
   return (
-    <div className="space-y-2">
-      {sorted.map((m) => (
-        <div key={m.id} className="py-2 border-b border-zinc-100 last:border-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">
-              {formatDate(m.date)}
-            </span>
-            {m.attendees && (
-              <span className="text-[11px] text-zinc-400 truncate">{m.attendees}</span>
-            )}
+    <div>
+      <div className="space-y-2 mb-2">
+        {sorted.length === 0 ? (
+          <p className="text-xs text-zinc-400 py-2">No meetings recorded.</p>
+        ) : (
+          sorted.map((m) => (
+            <div key={m.id} className="py-2 border-b border-zinc-100 last:border-0 group flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">
+                    {formatDate(m.date)}
+                  </span>
+                  {m.attendees && (
+                    <span className="text-[11px] text-zinc-400 truncate">{m.attendees}</span>
+                  )}
+                </div>
+                {m.summary && (
+                  <p className="text-xs text-zinc-700 leading-relaxed">{m.summary}</p>
+                )}
+                {m.decisions && (
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    <span className="font-medium text-zinc-600">Decisions:</span> {m.decisions}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => remove.mutate({ entity: 'meetings', id: m.id })}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
+                title="Delete meeting"
+              >
+                ×
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {adding ? (
+        <div className="p-2 bg-zinc-50 border border-zinc-200 rounded space-y-1.5">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Attendees (comma separated)"
+            value={attendees}
+            onChange={(e) => setAttendees(e.target.value)}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <textarea
+            placeholder="Summary — what was discussed, what changed in the deal"
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            rows={3}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <input
+            type="text"
+            placeholder="Decisions (one line)"
+            value={decisions}
+            onChange={(e) => setDecisions(e.target.value)}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={create.isPending}
+              className="px-3 py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Log meeting
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdding(false)}
+              className="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700"
+            >
+              Cancel
+            </button>
           </div>
-          {m.summary && (
-            <p className="text-xs text-zinc-700 leading-relaxed">{m.summary}</p>
-          )}
-          {m.decisions && (
-            <p className="text-[11px] text-zinc-500 mt-0.5">
-              <span className="font-medium text-zinc-600">Decisions:</span> {m.decisions}
-            </p>
-          )}
         </div>
-      ))}
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+        >
+          + Log meeting
+        </button>
+      )}
     </div>
   )
 }
@@ -356,6 +460,7 @@ function ActionItems({
 }) {
   const patch = usePatchAction(dealId)
   const create = useCreateAction(dealId)
+  const remove = useDeleteEntity()
   const [adding, setAdding] = useState(false)
   const [draftDesc, setDraftDesc] = useState('')
   const [draftDue, setDraftDue] = useState('')
@@ -379,7 +484,7 @@ function ActionItems({
           return (
             <div
               key={item.id}
-              className="flex items-start gap-2 py-1.5 border-b border-zinc-100 last:border-0"
+              className="flex items-start gap-2 py-1.5 border-b border-zinc-100 last:border-0 group"
             >
               <input
                 type="checkbox"
@@ -406,6 +511,14 @@ function ActionItems({
                   {item.source && <span>from {item.source}</span>}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => remove.mutate({ entity: 'actions', id: item.id })}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1 mt-0.5"
+                title="Delete action"
+              >
+                ×
+              </button>
             </div>
           )
         })}
@@ -489,8 +602,11 @@ export default function DealDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
+  const router = useRouter()
   const { data, isLoading } = useDealDetail(id)
   const patch = usePatchDeal()
+  const remove = useDeleteEntity()
+  const destroy = useConfirmDestroy()
 
   const onPatch = (p: Record<string, unknown>) => patch.mutate({ id, ...p })
 
@@ -529,7 +645,21 @@ export default function DealDetailPage({
         </Link>
 
         <div className="bg-white rounded-lg border border-zinc-200 shadow-sm px-5 py-4">
-          <DealHeader deal={deal} onPatch={onPatch} />
+          <DealHeader
+            deal={deal}
+            onPatch={onPatch}
+            onDelete={() =>
+              destroy.ask({
+                title: `Delete ${deal.name}?`,
+                body: 'Cascades to its meetings, action items, stakeholders, and bids.',
+                typeToConfirm: deal.name,
+                run: async () => {
+                  await remove.mutateAsync({ entity: 'deals', id })
+                  router.push('/')
+                },
+              })
+            }
+          />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-4 border-b border-zinc-200 text-xs">
             <div>
@@ -569,7 +699,7 @@ export default function DealDetailPage({
           </Section>
 
           <Section title="Meetings">
-            <MeetingTimeline meetings={meetings} />
+            <MeetingTimeline meetings={meetings} dealId={id} />
           </Section>
 
           <Section title="Action Items">
@@ -615,6 +745,7 @@ export default function DealDetailPage({
           )}
         </div>
       </div>
+      {destroy.element}
     </div>
   )
 }

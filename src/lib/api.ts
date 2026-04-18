@@ -510,3 +510,340 @@ export function useCompanies(query?: string) {
     staleTime: 60_000,
   });
 }
+
+// =====================================================================
+// PR1 — universal delete + companies detail + bids + meetings CRUD
+// =====================================================================
+
+// ---- Delete -------------------------------------------------------
+
+type DeleteEntity =
+  | "deals"
+  | "contacts"
+  | "companies"
+  | "actions"
+  | "meetings"
+  | "bids"
+  | "stakeholders";
+
+const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
+  deals: [["pipeline"], ["analytics"], ["activity"]],
+  contacts: [["contacts"]],
+  companies: [["companies-list"], ["company"]],
+  actions: [["deal"], ["analytics"]],
+  meetings: [["deal"], ["activity"]],
+  bids: [["bids-list"], ["bid"], ["company"]],
+  stakeholders: [["deal"]],
+};
+
+export function useDeleteEntity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entity, id }: { entity: DeleteEntity; id: string }) =>
+      apiWrite<{ id: string; deleted: boolean }>(
+        "DELETE",
+        `/api/dashboard/${entity}/${id}`,
+      ),
+    onSuccess: (_data, { entity }) => {
+      for (const queryKey of DELETE_INVALIDATE[entity]) {
+        qc.invalidateQueries({ queryKey });
+      }
+    },
+  });
+}
+
+// ---- Companies list + detail --------------------------------------
+
+export interface CompanyDetailResponse {
+  company: {
+    id: string;
+    name: string;
+    industry: string;
+    website: string;
+    notes: string;
+  };
+  stats: {
+    deal_count: number;
+    active_pipeline_value: number;
+    won_value: number;
+    contact_count: number;
+    open_bid_count: number;
+  };
+  deals: {
+    id: string;
+    name: string;
+    stage: string;
+    value_usd: number;
+    close_date: string | null;
+    next_step: string;
+  }[];
+  contacts: {
+    id: string;
+    name: string;
+    title: string;
+    email: string;
+    phone: string;
+    personal_notes: string;
+  }[];
+  bids: {
+    id: string;
+    name: string;
+    stage: string;
+    value_usd: number;
+    submission_deadline: string | null;
+    deal_id: string | null;
+  }[];
+  recent_meetings: {
+    id: string;
+    date: string;
+    summary: string;
+    deal_id: string | null;
+  }[];
+  recent_actions: {
+    id: string;
+    description: string;
+    status: string;
+    due_date: string | null;
+    deal_id: string | null;
+  }[];
+}
+
+export function useCompaniesList(query?: string) {
+  return useQuery({
+    queryKey: ["companies-list", query],
+    queryFn: async () => {
+      const params = query ? { q: query } : undefined;
+      const resp = await apiFetch<{ companies: CompanyOption[] }>(
+        "/api/dashboard/companies",
+        params,
+      );
+      return resp.companies;
+    },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useCompanyDetail(id: string) {
+  return useQuery({
+    queryKey: ["company", id],
+    queryFn: () => apiFetch<CompanyDetailResponse>(`/api/dashboard/companies/${id}`),
+    enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export interface CompanyPatchPayload {
+  name?: string;
+  industry?: string;
+  website?: string;
+  notes?: string;
+}
+
+export function usePatchCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: CompanyPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/companies/${id}`,
+        payload,
+      ),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["company", id] });
+      qc.invalidateQueries({ queryKey: ["companies-list"] });
+    },
+  });
+}
+
+export interface CompanyCreatePayload {
+  name: string;
+  industry?: string;
+  website?: string;
+}
+
+export function useCreateCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CompanyCreatePayload) =>
+      apiWrite<{ id: string; name: string }>(
+        "POST",
+        "/api/dashboard/companies",
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["companies-list"] });
+      qc.invalidateQueries({ queryKey: ["companies"] });
+    },
+  });
+}
+
+// ---- Bids ----------------------------------------------------------
+
+export interface BidListItem {
+  id: string;
+  name: string;
+  stage: string;
+  value_usd: number;
+  submission_deadline: string | null;
+  qa_deadline: string | null;
+  company_id: string | null;
+  company: string;
+  deal_id: string | null;
+  deal: string;
+  rfp_url: string;
+}
+
+export interface BidDetailResponse {
+  bid: {
+    id: string;
+    name: string;
+    stage: string;
+    value_usd: number;
+    submission_deadline: string | null;
+    qa_deadline: string | null;
+    rfp_url: string;
+    deliverables: string;
+    notes: string;
+    company_id: string | null;
+    company: string;
+    deal_id: string | null;
+    deal: string;
+  };
+}
+
+export function useBidsList(stage?: string) {
+  return useQuery({
+    queryKey: ["bids-list", stage ?? ""],
+    queryFn: async () => {
+      const params = stage ? { stage } : undefined;
+      const resp = await apiFetch<{ bids: BidListItem[] }>(
+        "/api/dashboard/bids",
+        params,
+      );
+      return resp.bids;
+    },
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useBidDetail(id: string) {
+  return useQuery({
+    queryKey: ["bid", id],
+    queryFn: () => apiFetch<BidDetailResponse>(`/api/dashboard/bids/${id}`),
+    enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+}
+
+export interface BidCreatePayload {
+  name: string;
+  company_id?: string | null;
+  deal_id?: string | null;
+  stage?: string;
+  value_usd?: number;
+  submission_deadline?: string | null;
+  qa_deadline?: string | null;
+  rfp_url?: string;
+  deliverables?: string;
+  notes?: string;
+}
+
+export function useCreateBid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BidCreatePayload) =>
+      apiWrite<{ id: string; name: string; stage: string }>(
+        "POST",
+        "/api/dashboard/bids",
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bids-list"] });
+      qc.invalidateQueries({ queryKey: ["company"] });
+    },
+  });
+}
+
+export interface BidPatchPayload {
+  name?: string;
+  stage?: string;
+  value_usd?: number;
+  submission_deadline?: string | null;
+  qa_deadline?: string | null;
+  rfp_url?: string;
+  deliverables?: string;
+  notes?: string;
+  company_id?: string | null;
+  deal_id?: string | null;
+}
+
+export function usePatchBid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: BidPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/bids/${id}`,
+        payload,
+      ),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["bid", id] });
+      qc.invalidateQueries({ queryKey: ["bids-list"] });
+    },
+  });
+}
+
+// ---- Meetings -----------------------------------------------------
+
+export interface MeetingCreatePayload {
+  date?: string | null;
+  attendees?: string;
+  summary?: string;
+  decisions?: string;
+  transcript?: string;
+}
+
+export function useCreateMeeting(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MeetingCreatePayload) =>
+      apiWrite<{ id: string; date: string }>(
+        "POST",
+        `/api/dashboard/deals/${dealId}/meetings`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export interface MeetingPatchPayload {
+  date?: string | null;
+  attendees?: string;
+  summary?: string;
+  decisions?: string;
+  transcript?: string;
+}
+
+export function usePatchMeeting(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: MeetingPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/meetings/${id}`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+    },
+  });
+}

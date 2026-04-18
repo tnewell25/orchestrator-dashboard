@@ -5,8 +5,10 @@ import {
   useContacts,
   usePatchContact,
   useCreateContact,
+  useDeleteEntity,
   type Contact,
 } from '@/lib/api'
+import { useConfirmDestroy } from '@/components/confirm-destroy'
 
 function formatDate(date: string | null) {
   if (!date) return '--'
@@ -16,17 +18,22 @@ function formatDate(date: string | null) {
 }
 
 function ContactRow({
-  contact, isExpanded, onToggle,
+  contact, isExpanded, onToggle, onDelete,
 }: {
   contact: Contact
   isExpanded: boolean
   onToggle: () => void
+  onDelete: () => void
 }) {
   const patch = usePatchContact()
   const [editingNotes, setEditingNotes] = useState(false)
   const [notesDraft, setNotesDraft] = useState(contact.personal_notes ?? '')
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(contact.title ?? '')
+  const [editingEmail, setEditingEmail] = useState(false)
+  const [emailDraft, setEmailDraft] = useState(contact.email ?? '')
+  const [editingPhone, setEditingPhone] = useState(false)
+  const [phoneDraft, setPhoneDraft] = useState(contact.phone ?? '')
 
   const saveNotes = async () => {
     if (notesDraft !== contact.personal_notes) {
@@ -39,6 +46,18 @@ function ContactRow({
       await patch.mutateAsync({ id: contact.id, title: titleDraft })
     }
     setEditingTitle(false)
+  }
+  const saveEmail = async () => {
+    if (emailDraft !== contact.email) {
+      await patch.mutateAsync({ id: contact.id, email: emailDraft })
+    }
+    setEditingEmail(false)
+  }
+  const savePhone = async () => {
+    if (phoneDraft !== contact.phone) {
+      await patch.mutateAsync({ id: contact.id, phone: phoneDraft })
+    }
+    setEditingPhone(false)
   }
 
   const hasNotes = !!contact.personal_notes?.trim()
@@ -159,9 +178,71 @@ function ContactRow({
             )}
           </div>
 
-          {contact.phone && (
-            <p className="text-[11px] text-zinc-400">{contact.phone}</p>
-          )}
+          {/* Email + phone (editable) */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wide block mb-0.5">
+                Email
+              </span>
+              {editingEmail ? (
+                <input
+                  autoFocus
+                  type="email"
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
+                  onBlur={saveEmail}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEmail()
+                    if (e.key === 'Escape') { setEmailDraft(contact.email ?? ''); setEditingEmail(false) }
+                  }}
+                  className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+                />
+              ) : (
+                <span
+                  onClick={() => setEditingEmail(true)}
+                  className={`text-xs cursor-text hover:bg-zinc-100 rounded px-1 -mx-1 block truncate ${contact.email ? 'text-zinc-700' : 'text-zinc-400 italic'}`}
+                >
+                  {contact.email || 'Add email'}
+                </span>
+              )}
+            </div>
+            <div>
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wide block mb-0.5">
+                Phone
+              </span>
+              {editingPhone ? (
+                <input
+                  autoFocus
+                  type="tel"
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onBlur={savePhone}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') savePhone()
+                    if (e.key === 'Escape') { setPhoneDraft(contact.phone ?? ''); setEditingPhone(false) }
+                  }}
+                  className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+                />
+              ) : (
+                <span
+                  onClick={() => setEditingPhone(true)}
+                  className={`text-xs cursor-text hover:bg-zinc-100 rounded px-1 -mx-1 block ${contact.phone ? 'text-zinc-700' : 'text-zinc-400 italic'}`}
+                >
+                  {contact.phone || 'Add phone'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-[11px] text-red-600 hover:bg-red-50 px-2 py-0.5 rounded"
+            >
+              Delete contact
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -257,6 +338,8 @@ export default function ContactsPage() {
 
   const { data, isLoading } = useContacts(query)
   const contacts: Contact[] = data ?? []
+  const remove = useDeleteEntity()
+  const destroy = useConfirmDestroy()
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -330,11 +413,20 @@ export default function ContactsPage() {
                     expandedId === contact.id ? null : contact.id
                   )
                 }
+                onDelete={() =>
+                  destroy.ask({
+                    title: `Delete ${contact.name}?`,
+                    body: 'Removes the contact and any stakeholder roles they held on deals.',
+                    typeToConfirm: contact.name,
+                    run: () => remove.mutateAsync({ entity: 'contacts', id: contact.id }),
+                  })
+                }
               />
             ))
           )}
         </div>
       </div>
+      {destroy.element}
     </div>
   )
 }

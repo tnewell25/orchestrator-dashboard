@@ -7,10 +7,14 @@ import {
   Users,
   Activity,
   Gauge,
+  Building2,
+  FileText,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Pipeline", icon: LayoutDashboard },
+  { href: "/bids", label: "Bids", icon: FileText },
+  { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/activity", label: "Activity", icon: Activity },
 ];
