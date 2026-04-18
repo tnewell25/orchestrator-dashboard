@@ -847,3 +847,138 @@ export function usePatchMeeting(dealId: string) {
     },
   });
 }
+
+// =====================================================================
+// PR2 — Inbox: dismiss/snooze reminders + approve pending actions
+// =====================================================================
+
+export type InboxReminderItem = {
+  kind: "reminder";
+  id: string;
+  title: string;
+  status: string;
+  trigger_at: string;
+  is_overdue: boolean;
+  deal_id: string | null;
+  deal_name: string | null;
+  kind_detail: string;
+  dup_count: number;
+};
+
+export type InboxPendingAction = {
+  kind: "pending_action";
+  id: string;
+  title: string;
+  tool_name: string;
+  status: string;
+  created_at: string;
+  expires_at: string | null;
+  deal_id: string | null;
+  deal_name: string | null;
+};
+
+export type InboxActionItem = {
+  kind: "action_item";
+  id: string;
+  title: string;
+  status: string;
+  due_date: string | null;
+  source: string;
+  deal_id: string | null;
+  deal_name: string | null;
+};
+
+export type InboxItem = InboxReminderItem | InboxPendingAction | InboxActionItem;
+
+export interface InboxResponse {
+  items: InboxItem[];
+  counts: {
+    reminders_overdue: number;
+    pending_actions: number;
+    actions_due: number;
+    reminders_upcoming: number;
+  };
+}
+
+export function useInbox() {
+  return useQuery({
+    queryKey: ["inbox"],
+    queryFn: () => apiFetch<InboxResponse>("/api/dashboard/inbox"),
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function usePatchReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; status?: string; message?: string; trigger_at?: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/reminders/${id}`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export function useSnoozeReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, hours }: { id: string; hours: number }) =>
+      apiWrite<{ id: string; trigger_at: string }>(
+        "POST",
+        `/api/dashboard/reminders/${id}/snooze`,
+        { hours },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export function useDeleteReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiWrite<{ id: string; deleted: boolean }>(
+        "DELETE",
+        `/api/dashboard/reminders/${id}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+// Pending action approve/reject — these endpoints live at the root of the
+// API (not under /api/dashboard) because they predate the dashboard router.
+export function useApprovePendingAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiWrite<{ ok: boolean; result?: unknown }>(
+        "POST",
+        `/pending-actions/${id}/approve`,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox"] }),
+  });
+}
+
+export function useRejectPendingAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiWrite<{ ok: boolean; id: string }>(
+        "POST",
+        `/pending-actions/${id}/reject`,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox"] }),
+  });
+}
