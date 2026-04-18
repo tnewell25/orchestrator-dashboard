@@ -524,7 +524,9 @@ type DeleteEntity =
   | "actions"
   | "meetings"
   | "bids"
-  | "stakeholders";
+  | "stakeholders"
+  | "plants"
+  | "specs";
 
 const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   deals: [["pipeline"], ["analytics"], ["activity"]],
@@ -534,6 +536,8 @@ const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   meetings: [["deal"], ["activity"]],
   bids: [["bids-list"], ["bid"], ["company"]],
   stakeholders: [["deal"]],
+  plants: [["plants-list"], ["company"]],
+  specs: [["specs"]],
 };
 
 export function useDeleteEntity() {
@@ -980,5 +984,283 @@ export function useRejectPendingAction() {
         `/pending-actions/${id}/reject`,
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inbox"] }),
+  });
+}
+
+// =====================================================================
+// PR3 — Plants, Specs, Compliance Matrix (industrial data model)
+// =====================================================================
+
+export const PLANT_SITE_TYPES = [
+  "refinery", "chemical", "power_gen", "water_wastewater", "manufacturing",
+  "data_center", "pharma", "food_bev", "mining", "utility_substation", "other",
+] as const;
+
+export const SPEC_FAMILIES = [
+  "hazardous_area", "functional_safety", "cybersecurity", "electrical",
+  "export_control", "quality", "environmental", "other",
+] as const;
+
+export const COMPLIANCE_STATUSES = [
+  "compliant", "partial", "exception", "not_applicable", "unanswered",
+] as const;
+
+export interface PlantListItem {
+  id: string;
+  name: string;
+  company_id: string | null;
+  company: string;
+  site_address: string;
+  site_type: string;
+}
+
+export interface PlantDetailResponse {
+  plant: {
+    id: string;
+    name: string;
+    site_address: string;
+    site_type: string;
+    standards_notes: string;
+    notes: string;
+    company: { id: string; name: string } | null;
+    plant_manager: { id: string; name: string; title: string; email: string } | null;
+  };
+  deals: {
+    id: string;
+    name: string;
+    stage: string;
+    value_usd: number;
+    next_step: string;
+    close_date: string | null;
+  }[];
+  bids: {
+    id: string;
+    name: string;
+    stage: string;
+    value_usd: number;
+    submission_deadline: string | null;
+  }[];
+}
+
+export function usePlants(filters?: { company_id?: string; q?: string }) {
+  return useQuery({
+    queryKey: ["plants-list", filters?.company_id ?? "", filters?.q ?? ""],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters?.company_id) params.company_id = filters.company_id;
+      if (filters?.q) params.q = filters.q;
+      const resp = await apiFetch<{ plants: PlantListItem[] }>(
+        "/api/dashboard/plants",
+        Object.keys(params).length ? params : undefined,
+      );
+      return resp.plants;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function usePlantDetail(id: string) {
+  return useQuery({
+    queryKey: ["plant", id],
+    queryFn: () => apiFetch<PlantDetailResponse>(`/api/dashboard/plants/${id}`),
+    enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+}
+
+export interface PlantCreatePayload {
+  name: string;
+  company_id: string;
+  site_address?: string;
+  site_type?: string;
+  plant_manager_contact_id?: string | null;
+  standards_notes?: string;
+  notes?: string;
+}
+
+export function useCreatePlant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PlantCreatePayload) =>
+      apiWrite<{ id: string; name: string }>("POST", "/api/dashboard/plants", payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["plants-list"] });
+      qc.invalidateQueries({ queryKey: ["company"] });
+    },
+  });
+}
+
+export interface PlantPatchPayload {
+  name?: string;
+  site_address?: string;
+  site_type?: string;
+  plant_manager_contact_id?: string | null;
+  standards_notes?: string;
+  notes?: string;
+  company_id?: string;
+}
+
+export function usePatchPlant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: PlantPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/plants/${id}`,
+        payload,
+      ),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ["plant", id] });
+      qc.invalidateQueries({ queryKey: ["plants-list"] });
+    },
+  });
+}
+
+// ---- Specs ---------------------------------------------------------
+
+export interface SpecItem {
+  id: string;
+  code: string;
+  name: string;
+  family: string;
+  scope: string;
+  evidence_required: string;
+}
+
+export function useSpecs(family?: string) {
+  return useQuery({
+    queryKey: ["specs", family ?? ""],
+    queryFn: async () => {
+      const params = family ? { family } : undefined;
+      const resp = await apiFetch<{ specs: SpecItem[] }>("/api/dashboard/specs", params);
+      return resp.specs;
+    },
+    staleTime: 60_000,
+  });
+}
+
+export interface SpecCreatePayload {
+  code: string;
+  name: string;
+  family?: string;
+  scope?: string;
+  evidence_required?: string;
+}
+
+export function useCreateSpec() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SpecCreatePayload) =>
+      apiWrite<{ id: string; code: string }>("POST", "/api/dashboard/specs", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["specs"] }),
+  });
+}
+
+export function useDeleteSpec() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiWrite<{ id: string; deleted: boolean }>(
+        "DELETE",
+        `/api/dashboard/specs/${id}`,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["specs"] }),
+  });
+}
+
+// ---- Compliance Matrix --------------------------------------------
+
+export interface ComplianceItem {
+  id: string;
+  clause_section: string;
+  clause_text: string;
+  our_response: string;
+  status: string;
+  spec_ids: string[];
+  notes: string;
+  sort_order: number;
+}
+
+export interface ComplianceListResponse {
+  items: ComplianceItem[];
+  summary: Record<string, number>;
+  total: number;
+}
+
+export function useCompliance(bidId: string) {
+  return useQuery({
+    queryKey: ["compliance", bidId],
+    queryFn: () => apiFetch<ComplianceListResponse>(`/api/dashboard/bids/${bidId}/compliance`),
+    enabled: !!bidId,
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export interface ComplianceCreatePayload {
+  clause_section?: string;
+  clause_text: string;
+  our_response?: string;
+  status?: string;
+  spec_ids?: string[];
+  notes?: string;
+  sort_order?: number;
+}
+
+export function useCreateCompliance(bidId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ComplianceCreatePayload) =>
+      apiWrite<{ id: string }>("POST", `/api/dashboard/bids/${bidId}/compliance`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance", bidId] }),
+  });
+}
+
+export function useBulkCompliance(bidId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) =>
+      apiWrite<{ created: number }>(
+        "POST",
+        `/api/dashboard/bids/${bidId}/compliance/bulk`,
+        { text },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance", bidId] }),
+  });
+}
+
+export interface CompliancePatchPayload {
+  clause_section?: string;
+  clause_text?: string;
+  our_response?: string;
+  status?: string;
+  spec_ids?: string[];
+  notes?: string;
+  sort_order?: number;
+}
+
+export function usePatchCompliance(bidId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: CompliancePatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/compliance/${id}`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance", bidId] }),
+  });
+}
+
+export function useDeleteCompliance(bidId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiWrite<{ id: string; deleted: boolean }>(
+        "DELETE",
+        `/api/dashboard/compliance/${id}`,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance", bidId] }),
   });
 }

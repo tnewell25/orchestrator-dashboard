@@ -9,14 +9,18 @@ import {
   Gauge,
   Building2,
   FileText,
+  Factory,
+  ShieldCheck,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Pipeline", icon: LayoutDashboard },
   { href: "/bids", label: "Bids", icon: FileText },
   { href: "/companies", label: "Companies", icon: Building2 },
+  { href: "/plants", label: "Plants", icon: Factory },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/specs", label: "Specs", icon: ShieldCheck },
 ];
 
 export function Sidebar() {

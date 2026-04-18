@@ -7,8 +7,33 @@ import {
   useBidDetail,
   usePatchBid,
   useDeleteEntity,
+  useCompliance,
+  useCreateCompliance,
+  useBulkCompliance,
+  usePatchCompliance,
+  useDeleteCompliance,
+  useSpecs,
+  COMPLIANCE_STATUSES,
+  type ComplianceItem,
+  type SpecItem,
 } from "@/lib/api";
 import { useConfirmDestroy } from "@/components/confirm-destroy";
+
+const COMPLIANCE_BADGES: Record<string, string> = {
+  compliant: "bg-emerald-50 text-emerald-700",
+  partial: "bg-amber-50 text-amber-700",
+  exception: "bg-red-50 text-red-700",
+  not_applicable: "bg-zinc-100 text-zinc-500",
+  unanswered: "bg-slate-100 text-slate-700",
+};
+
+const COMPLIANCE_LABELS: Record<string, string> = {
+  compliant: "Compliant",
+  partial: "Partial",
+  exception: "Exception",
+  not_applicable: "N/A",
+  unanswered: "Unanswered",
+};
 
 const STAGE_OPTIONS = [
   "evaluating", "in_progress", "submitted", "won", "lost", "withdrawn",
@@ -262,8 +287,310 @@ export default function BidDetailPage({
             />
           </div>
         </div>
+
+        <ComplianceMatrix bidId={id} />
       </div>
       {destroy.element}
     </div>
+  );
+}
+
+// ----- Compliance Matrix -----------------------------------------------
+
+function ComplianceMatrix({ bidId }: { bidId: string }) {
+  const { data, isLoading } = useCompliance(bidId);
+  const { data: specs } = useSpecs();
+  const create = useCreateCompliance(bidId);
+  const bulk = useBulkCompliance(bidId);
+  const items = data?.items ?? [];
+  const summary = data?.summary;
+  const total = data?.total ?? 0;
+
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [section, setSection] = useState("");
+  const [clauseText, setClauseText] = useState("");
+
+  const submitBulk = async () => {
+    if (!bulkText.trim()) return;
+    await bulk.mutateAsync(bulkText);
+    setBulkText("");
+    setBulkMode(false);
+  };
+
+  const submitOne = async () => {
+    if (!clauseText.trim()) return;
+    await create.mutateAsync({
+      clause_section: section.trim(),
+      clause_text: clauseText.trim(),
+    });
+    setSection(""); setClauseText("");
+    setAdding(false);
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-zinc-200 shadow-sm p-5 mt-4">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wide">
+            Compliance matrix
+          </h2>
+          <p className="text-[11px] text-zinc-500 mt-0.5">
+            Per-clause RFP responses. Procurement scores this document — a single non-compliant line can disqualify the bid.
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {!bulkMode && !adding && (
+            <>
+              <button
+                type="button"
+                onClick={() => setBulkMode(true)}
+                className="px-2.5 py-1 text-[11px] font-medium text-zinc-700 bg-white border border-zinc-200 rounded hover:bg-zinc-50"
+              >
+                Paste RFP
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="px-2.5 py-1 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
+              >
+                + Clause
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {summary && total > 0 && (
+        <div className="flex items-center gap-3 mb-3 text-[11px] flex-wrap">
+          {COMPLIANCE_STATUSES.map((s) => {
+            const n = summary[s] ?? 0;
+            if (n === 0) return null;
+            return (
+              <div key={s} className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${COMPLIANCE_BADGES[s].split(" ")[0].replace("bg-", "bg-")}`} />
+                <span className="text-zinc-600 tabular-nums">
+                  {n} {COMPLIANCE_LABELS[s].toLowerCase()}
+                </span>
+              </div>
+            );
+          })}
+          <span className="ml-auto text-zinc-400 tabular-nums">{total} total</span>
+        </div>
+      )}
+
+      {bulkMode && (
+        <div className="bg-zinc-50 border border-zinc-200 rounded p-2 mb-3 space-y-1.5">
+          <p className="text-[11px] text-zinc-500">
+            Paste the RFP&apos;s clause list. Lines starting with a section number (e.g. &quot;4.2.1 ...&quot;) are auto-parsed.
+          </p>
+          <textarea
+            autoFocus
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            rows={6}
+            placeholder={`4.2.1 All field-mounted equipment must be ATEX certified.\n4.2.2 SIL-2 rating required for safety-critical loops.\n4.3.1 IEC 62443-3-2 zone & conduit drawing required.`}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400 font-mono"
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={submitBulk}
+              disabled={bulk.isPending || !bulkText.trim()}
+              className="px-3 py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {bulk.isPending ? "Importing..." : `Import ${bulkText.split("\n").filter((l) => l.trim()).length} clauses`}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBulkMode(false); setBulkText(""); }}
+              className="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {adding && (
+        <div className="bg-zinc-50 border border-zinc-200 rounded p-2 mb-3 space-y-1.5">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Section (e.g. 4.2.1)"
+            value={section}
+            onChange={(e) => setSection(e.target.value)}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <textarea
+            placeholder="Clause text from RFP"
+            value={clauseText}
+            onChange={(e) => setClauseText(e.target.value)}
+            rows={2}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={submitOne}
+              disabled={create.isPending || !clauseText.trim()}
+              className="px-3 py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Add clause
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdding(false)}
+              className="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <p className="text-xs text-zinc-400 py-3 text-center">Loading...</p>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-zinc-400 py-4 text-center">
+          No compliance clauses yet. Paste an RFP to get started.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-zinc-200 text-left text-[11px] text-zinc-400 uppercase tracking-wider">
+                <th className="py-1.5 pr-3 font-medium w-16">§</th>
+                <th className="py-1.5 pr-3 font-medium">Clause</th>
+                <th className="py-1.5 pr-3 font-medium">Our response</th>
+                <th className="py-1.5 pr-3 font-medium w-28">Status</th>
+                <th className="py-1.5 pr-3 font-medium w-28">Specs</th>
+                <th className="py-1.5 w-6" />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <ComplianceRow key={it.id} item={it} bidId={bidId} specs={specs ?? []} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComplianceRow({
+  item, bidId, specs,
+}: {
+  item: ComplianceItem;
+  bidId: string;
+  specs: SpecItem[];
+}) {
+  const patch = usePatchCompliance(bidId);
+  const remove = useDeleteCompliance(bidId);
+  const specsById = Object.fromEntries(specs.map((s) => [s.id, s]));
+  const [showSpecPicker, setShowSpecPicker] = useState(false);
+
+  const toggleSpec = (specId: string) => {
+    const has = item.spec_ids.includes(specId);
+    const next = has
+      ? item.spec_ids.filter((s) => s !== specId)
+      : [...item.spec_ids, specId];
+    patch.mutate({ id: item.id, spec_ids: next });
+  };
+
+  return (
+    <tr className="border-b border-zinc-100 last:border-0 align-top group">
+      <td className="py-2 pr-3 font-mono text-[11px] text-zinc-500">{item.clause_section}</td>
+      <td className="py-2 pr-3">
+        <EditableText
+          value={item.clause_text}
+          onSave={(clause_text) => patch.mutateAsync({ id: item.id, clause_text })}
+          multiline
+          className="block leading-relaxed"
+        />
+      </td>
+      <td className="py-2 pr-3">
+        <EditableText
+          value={item.our_response}
+          placeholder="Draft response..."
+          onSave={(our_response) => patch.mutateAsync({ id: item.id, our_response })}
+          multiline
+          className="block leading-relaxed"
+        />
+      </td>
+      <td className="py-2 pr-3">
+        <select
+          value={item.status}
+          onChange={(e) => patch.mutate({ id: item.id, status: e.target.value })}
+          className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase border-0 cursor-pointer ${COMPLIANCE_BADGES[item.status]}`}
+        >
+          {COMPLIANCE_STATUSES.map((s) => (
+            <option key={s} value={s}>{COMPLIANCE_LABELS[s]}</option>
+          ))}
+        </select>
+      </td>
+      <td className="py-2 pr-3 relative">
+        <div className="flex flex-wrap gap-1">
+          {item.spec_ids.map((sid) => {
+            const sp = specsById[sid];
+            return (
+              <span
+                key={sid}
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-700 cursor-pointer"
+                title={sp?.name}
+                onClick={() => toggleSpec(sid)}
+              >
+                {sp?.code ?? sid.slice(0, 6)}
+              </span>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowSpecPicker((v) => !v)}
+            className="px-1.5 py-0.5 rounded text-[10px] text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+          >
+            +
+          </button>
+        </div>
+        {showSpecPicker && (
+          <div
+            className="absolute right-0 top-full mt-1 z-10 bg-white border border-zinc-200 rounded shadow-lg p-1 w-56 max-h-64 overflow-y-auto"
+            onMouseLeave={() => setShowSpecPicker(false)}
+          >
+            {specs.length === 0 && (
+              <p className="text-[11px] text-zinc-400 px-2 py-1.5">
+                No specs in library yet. Add them in /specs.
+              </p>
+            )}
+            {specs.map((sp) => {
+              const selected = item.spec_ids.includes(sp.id);
+              return (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => toggleSpec(sp.id)}
+                  className={`w-full text-left px-2 py-1 rounded text-[11px] hover:bg-zinc-50 flex items-center gap-2 ${selected ? "bg-violet-50/50" : ""}`}
+                >
+                  <span className="font-mono text-zinc-700 w-20 truncate">{sp.code}</span>
+                  <span className="text-zinc-500 truncate">{sp.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </td>
+      <td className="py-2 text-right">
+        <button
+          type="button"
+          onClick={() => remove.mutate(item.id)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
+        >
+          ×
+        </button>
+      </td>
+    </tr>
   );
 }
