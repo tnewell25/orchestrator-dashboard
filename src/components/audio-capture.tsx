@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Mic, Square, Upload, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Mic, Square, Upload, Loader2, CheckCircle2, AlertCircle, Monitor } from "lucide-react";
 import { useUploadDealAudio, type AudioProcessResult } from "@/lib/api";
 
 const MEETING_TYPE_LABELS: Record<string, string> = {
@@ -44,26 +44,105 @@ export function AudioCapture({ dealId }: { dealId: string }) {
   const [result, setResult] = useState<AudioProcessResult | null>(null);
   const [collapsed, setCollapsed] = useState(true);
 
+  // Track all streams so we can stop their tracks on cleanup.
+  const activeStreams = useRef<MediaStream[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const [mode, setMode] = useState<"mic" | "meeting" | null>(null);
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Prefer webm/opus for size — Whisper supports it natively.
-      const mr = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-      chunks.current = [];
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
-      mr.onstop = () => {
-        const blob = new Blob(chunks.current, { type: "audio/webm" });
-        setRecordedBlob(blob);
-        stream.getTracks().forEach((t) => t.stop());
-      };
-      mr.start();
-      mediaRecorder.current = mr;
-      setRecording(true);
-      setSeconds(0);
-      timerRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+      activeStreams.current = [stream];
+      _startRecorder(stream, "mic");
     } catch (e) {
       alert(`Microphone access denied or unavailable: ${(e as Error).message}`);
     }
+  };
+
+  // Capture Zoom/Teams/Meet audio + mic together, mixed via Web Audio API.
+  // The user picks a tab/window/screen and checks "Share tab audio" in the
+  // Chrome picker — that gives us system audio without any extension.
+  const startMeetingRecording = async () => {
+    try {
+      const screen = await navigator.mediaDevices.getDisplayMedia({
+        audio: true, video: true,  // video required by spec; we drop it
+      } as MediaStreamConstraints);
+      const screenAudio = screen.getAudioTracks();
+      if (screenAudio.length === 0) {
+        screen.getTracks().forEach((t) => t.stop());
+        alert(
+          "No system audio detected. When sharing, make sure you check " +
+          "\"Also share tab audio\" (Chrome) or \"Share system audio\" " +
+          "(Edge). Safari doesn't support this — use Chrome."
+        );
+        return;
+      }
+      // Drop the video track — we only need audio.
+      screen.getVideoTracks().forEach((t) => t.stop());
+
+      let mic: MediaStream | null = null;
+      try {
+        mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        // Mic optional — they may want call audio only.
+        mic = null;
+      }
+
+      activeStreams.current = mic ? [screen, mic] : [screen];
+
+      const ctx = new AudioContext();
+      audioContextRef.current = ctx;
+      const dest = ctx.createMediaStreamDestination();
+
+      const sysSrc = ctx.createMediaStreamSource(
+        new MediaStream([screenAudio[0]]),
+      );
+      const sysGain = ctx.createGain();
+      sysGain.gain.value = 1.0;
+      sysSrc.connect(sysGain).connect(dest);
+
+      if (mic) {
+        const micSrc = ctx.createMediaStreamSource(mic);
+        const micGain = ctx.createGain();
+        micGain.gain.value = 0.9; // slight duck so far-end doesn't drown
+        micSrc.connect(micGain).connect(dest);
+      }
+
+      // If the user stops sharing from the browser's native bar, end us too
+      screenAudio[0].addEventListener("ended", () => {
+        if (mediaRecorder.current && mediaRecorder.current.state !== "inactive") {
+          stopRecording();
+        }
+      });
+
+      _startRecorder(dest.stream, "meeting");
+    } catch (e) {
+      const msg = (e as Error).message || "Permission denied";
+      if (!msg.toLowerCase().includes("denied") && !msg.toLowerCase().includes("dismiss")) {
+        alert(`Couldn't start meeting recording: ${msg}`);
+      }
+    }
+  };
+
+  const _startRecorder = (stream: MediaStream, captureMode: "mic" | "meeting") => {
+    setMode(captureMode);
+    const mr = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+    chunks.current = [];
+    mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
+    mr.onstop = () => {
+      const blob = new Blob(chunks.current, { type: "audio/webm" });
+      setRecordedBlob(blob);
+      activeStreams.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+      activeStreams.current = [];
+      audioContextRef.current?.close().catch(() => {});
+      audioContextRef.current = null;
+    };
+    // Get periodic chunks so a crash mid-recording doesn't lose everything
+    mr.start(5000);
+    mediaRecorder.current = mr;
+    setRecording(true);
+    setSeconds(0);
+    timerRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
   };
 
   const stopRecording = () => {
@@ -71,6 +150,11 @@ export function AudioCapture({ dealId }: { dealId: string }) {
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   };
+
+  const supportsDisplayMedia =
+    typeof window !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === "function";
 
   const submitFile = async (file: File) => {
     setResult(null);
@@ -135,9 +219,20 @@ export function AudioCapture({ dealId }: { dealId: string }) {
               type="button"
               onClick={startRecording}
               className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
+              title="Records your microphone — for in-truck dictation"
             >
-              <Mic size={13} /> Start recording
+              <Mic size={13} /> Mic
             </button>
+            {supportsDisplayMedia && (
+              <button
+                type="button"
+                onClick={startMeetingRecording}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded transition-colors"
+                title="Records a Zoom/Teams/Meet call — captures both sides + your mic. Choose the meeting tab and check 'Share tab audio'."
+              >
+                <Monitor size={13} /> Record meeting (Zoom/Teams)
+              </button>
+            )}
             <span className="text-[11px] text-slate-400">or</span>
             <button
               type="button"
@@ -156,7 +251,7 @@ export function AudioCapture({ dealId }: { dealId: string }) {
                 if (f) submitFile(f);
               }}
             />
-            <span className="text-[10px] text-slate-400 ml-auto">Max 25MB · ≈ 1 hour</span>
+            <span className="text-[10px] text-slate-400 ml-auto">Up to ~10 hours</span>
           </>
         )}
 
@@ -172,6 +267,11 @@ export function AudioCapture({ dealId }: { dealId: string }) {
             <span className="text-xs text-slate-700 tabular-nums">
               <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 animate-pulse" />
               {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+              {mode === "meeting" && (
+                <span className="ml-2 text-[11px] text-slate-500">
+                  · capturing call audio + mic
+                </span>
+              )}
             </span>
           </>
         )}
