@@ -1266,6 +1266,53 @@ export function useDeleteCompliance(bidId: string) {
 }
 
 // =====================================================================
+// PR7 — Meeting-prep brief + per-deal audit log
+// =====================================================================
+
+export interface DealBriefResponse {
+  deal_id: string;
+  brief_md: string;
+}
+
+export function useGenerateBrief() {
+  return useMutation({
+    mutationFn: (dealId: string) =>
+      apiWrite<DealBriefResponse>(
+        "POST",
+        `/api/dashboard/deals/${dealId}/brief`,
+      ),
+  });
+}
+
+export interface DealAuditItem {
+  id: string;
+  timestamp: string;
+  tool_name: string;
+  args_summary: string;
+  result_status: string;
+  result_summary: string;
+  session_id: string;
+  duration_ms: number;
+  safety: string;
+  source: "dashboard" | "bot" | "system";
+}
+
+export function useDealAudit(dealId: string) {
+  return useQuery({
+    queryKey: ["deal-audit", dealId],
+    queryFn: async () => {
+      const resp = await apiFetch<{ items: DealAuditItem[] }>(
+        `/api/dashboard/deals/${dealId}/audit`,
+      );
+      return resp.items;
+    },
+    enabled: !!dealId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+}
+
+// =====================================================================
 // PR6 — Unified search for the Cmd-K palette + create-stakeholder hook
 // =====================================================================
 

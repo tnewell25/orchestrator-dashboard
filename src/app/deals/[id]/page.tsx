@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   useDealDetail,
   useDealHealth,
+  useDealAudit,
   usePatchDeal,
   useCreateAction,
   usePatchAction,
@@ -14,12 +15,14 @@ import {
   useCreateMeeting,
   useDeleteEntity,
   useSuggestMeddic,
+  useGenerateBrief,
   useContacts,
   type DealDetailResponse,
   type MeddicData,
   type Stakeholder,
   type Meeting,
   type ActionItemData,
+  type DealAuditItem,
 } from '@/lib/api'
 import { useConfirmDestroy } from '@/components/confirm-destroy'
 
@@ -209,11 +212,12 @@ function HealthBar({ dealId }: { dealId: string }) {
 // --- Header (stage dropdown + inline value) ---------------------------
 
 function DealHeader({
-  deal, onPatch, onDelete,
+  deal, onPatch, onDelete, onGenerateBrief,
 }: {
   deal: DealDetailResponse['deal']
   onPatch: (p: Record<string, unknown>) => void
   onDelete: () => void
+  onGenerateBrief: () => void
 }) {
   return (
     <div className="flex items-start justify-between gap-4 pb-4 border-b border-zinc-200">
@@ -252,13 +256,23 @@ function DealHeader({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 rounded"
-        >
-          Delete deal
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onGenerateBrief}
+            className="px-2 py-0.5 text-[11px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded"
+            title="Generate a meeting-prep one-pager from current deal context"
+          >
+            Brief
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 rounded"
+          >
+            Delete
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1052,8 +1066,22 @@ export default function DealDetailPage({
   const patch = usePatchDeal()
   const remove = useDeleteEntity()
   const destroy = useConfirmDestroy()
+  const brief = useGenerateBrief()
+  const [briefOpen, setBriefOpen] = useState(false)
+  const [briefText, setBriefText] = useState('')
 
   const onPatch = (p: Record<string, unknown>) => patch.mutate({ id, ...p })
+
+  const generateBrief = async () => {
+    setBriefOpen(true)
+    setBriefText('')
+    try {
+      const res = await brief.mutateAsync(id)
+      setBriefText(res.brief_md)
+    } catch (e) {
+      setBriefText(`Failed to generate brief: ${(e as Error).message}`)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -1093,6 +1121,7 @@ export default function DealDetailPage({
           <DealHeader
             deal={deal}
             onPatch={onPatch}
+            onGenerateBrief={generateBrief}
             onDelete={() =>
               destroy.ask({
                 title: `Delete ${deal.name}?`,
@@ -1190,8 +1219,157 @@ export default function DealDetailPage({
             </Section>
           )}
         </div>
+
+        <DealAuditSection dealId={id} />
       </div>
       {destroy.element}
+      {briefOpen && (
+        <BriefModal
+          loading={brief.isPending}
+          brief={briefText}
+          onRegenerate={generateBrief}
+          onClose={() => setBriefOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function BriefModal({
+  loading, brief, onRegenerate, onClose,
+}: {
+  loading: boolean
+  brief: string
+  onRegenerate: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-2xl border border-zinc-200 w-[700px] max-w-full max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="px-4 py-2.5 border-b border-zinc-200 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">Meeting prep brief</h2>
+            <p className="text-[11px] text-zinc-500">
+              Auto-generated from current deal context. Read before walking in.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {!loading && brief && (
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(brief)}
+                className="px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 rounded"
+              >
+                Copy
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onRegenerate}
+              disabled={loading}
+              className="px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 rounded disabled:opacity-50"
+            >
+              Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 rounded"
+            >
+              Close
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading && (
+            <p className="text-xs text-zinc-500 text-center py-8">
+              Generating... typically 5-15s while the agent reads the full deal context.
+            </p>
+          )}
+          {!loading && brief && (
+            <div className="text-xs text-zinc-800 leading-relaxed whitespace-pre-wrap font-mono">
+              {brief}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DealAuditSection({ dealId }: { dealId: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, isFetching } = useDealAudit(open ? dealId : '')
+
+  return (
+    <div className="bg-white rounded-lg border border-zinc-200 shadow-sm mt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-zinc-50/50 transition-colors"
+      >
+        <div>
+          <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wide">
+            Activity log
+          </h2>
+          <p className="text-[11px] text-zinc-500 mt-0.5">
+            Every tool call + dashboard mutation that touched this deal — bot or web, you can see exactly what happened.
+          </p>
+        </div>
+        <span className={`text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      {open && (
+        <div className="border-t border-zinc-200 max-h-96 overflow-y-auto">
+          {isFetching && !data && (
+            <p className="text-xs text-zinc-400 text-center py-4">Loading...</p>
+          )}
+          {data && data.length === 0 && (
+            <p className="text-xs text-zinc-400 text-center py-4">
+              No tracked activity for this deal yet.
+            </p>
+          )}
+          {data && data.map((row: DealAuditItem) => (
+            <AuditRow key={row.id} row={row} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AuditRow({ row }: { row: DealAuditItem }) {
+  const sourceColor =
+    row.source === 'dashboard' ? 'bg-blue-50 text-blue-700'
+    : row.source === 'bot' ? 'bg-violet-50 text-violet-700'
+    : 'bg-zinc-100 text-zinc-600'
+  const statusColor =
+    row.result_status === 'ok' ? 'text-emerald-600'
+    : row.result_status === 'error' ? 'text-red-600'
+    : 'text-zinc-500'
+  return (
+    <div className="px-5 py-2 border-b border-zinc-100 last:border-0 text-xs">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide ${sourceColor}`}>
+          {row.source}
+        </span>
+        <span className="font-mono text-[11px] text-zinc-700">{row.tool_name}</span>
+        <span className={`text-[11px] ${statusColor}`}>{row.result_status}</span>
+        <span className="text-[10px] text-zinc-400 ml-auto tabular-nums">
+          {new Date(row.timestamp).toLocaleString('en-US', {
+            month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit',
+          })}
+        </span>
+      </div>
+      {row.result_summary && (
+        <p className="text-[11px] text-zinc-600 mt-0.5">{row.result_summary}</p>
+      )}
     </div>
   )
 }
