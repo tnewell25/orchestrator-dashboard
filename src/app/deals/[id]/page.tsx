@@ -10,9 +10,11 @@ import {
   useCreateAction,
   usePatchAction,
   usePatchStakeholder,
+  useCreateStakeholder,
   useCreateMeeting,
   useDeleteEntity,
   useSuggestMeddic,
+  useContacts,
   type DealDetailResponse,
   type MeddicData,
   type Stakeholder,
@@ -36,6 +38,30 @@ const STAGE_COLORS: Record<string, string> = {
 
 const SENTIMENT_OPTIONS = ['supportive', 'neutral', 'opposed', 'unknown'] as const
 const INFLUENCE_OPTIONS = ['low', 'medium', 'high'] as const
+
+// Industrial buying-committee taxonomy. Surface every role the backend accepts.
+const ROLE_OPTIONS = [
+  'champion', 'economic_buyer', 'technical_buyer', 'blocker', 'coach', 'user',
+  'ot_cyber', 'it_cyber', 'operations', 'maintenance',
+  'procurement', 'legal', 'finance', 'parent_company_standards',
+] as const
+
+const ROLE_LABELS: Record<string, string> = {
+  champion: 'Champion',
+  economic_buyer: 'Economic Buyer',
+  technical_buyer: 'Technical Buyer',
+  blocker: 'Blocker',
+  coach: 'Coach',
+  user: 'User',
+  ot_cyber: 'OT Cyber',
+  it_cyber: 'IT Cyber',
+  operations: 'Operations',
+  maintenance: 'Maintenance',
+  procurement: 'Procurement',
+  legal: 'Legal',
+  finance: 'Finance',
+  parent_company_standards: 'Parent-Co Standards',
+}
 
 const SENTIMENT_COLORS: Record<string, string> = {
   supportive: 'bg-emerald-500',
@@ -306,6 +332,283 @@ function MeddicScorecard({
 }
 
 // --- Stakeholders ------------------------------------------------------
+
+function StakeholdersSection({
+  stakeholders, dealId,
+}: {
+  stakeholders: Stakeholder[]
+  dealId: string
+}) {
+  const [view, setView] = useState<'table' | 'map'>('table')
+  const [adding, setAdding] = useState(false)
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-0.5 bg-zinc-100 rounded p-0.5">
+          <button
+            type="button"
+            onClick={() => setView('table')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium ${view === 'table' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+          >
+            Table
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('map')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium ${view === 'map' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+          >
+            Map
+          </button>
+        </div>
+        {!adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+          >
+            + Add stakeholder
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <AddStakeholderForm
+          dealId={dealId}
+          existingContactIds={new Set(stakeholders.map((s) => s.contact_id))}
+          onClose={() => setAdding(false)}
+        />
+      )}
+
+      {view === 'table' ? (
+        <StakeholderTable stakeholders={stakeholders} dealId={dealId} />
+      ) : (
+        <StakeholderMap stakeholders={stakeholders} />
+      )}
+    </div>
+  )
+}
+
+function AddStakeholderForm({
+  dealId, existingContactIds, onClose,
+}: {
+  dealId: string
+  existingContactIds: Set<string>
+  onClose: () => void
+}) {
+  const [contactQuery, setContactQuery] = useState('')
+  const [contactId, setContactId] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [role, setRole] = useState<string>('champion')
+  const [sentiment, setSentiment] = useState<string>('unknown')
+  const [influence, setInfluence] = useState<string>('medium')
+  const create = useCreateStakeholder(dealId)
+  const { data: contactResults } = useContacts(contactQuery)
+  const filteredContacts = (contactResults ?? []).filter(
+    (c) => !contactId && (!existingContactIds.has(c.id) || c.id === contactId),
+  )
+
+  const submit = async () => {
+    if (!contactId) return
+    await create.mutateAsync({
+      contact_id: contactId, role, sentiment, influence,
+    })
+    onClose()
+  }
+
+  return (
+    <div className="bg-zinc-50 border border-zinc-200 rounded p-2 mb-3 space-y-1.5">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-semibold text-zinc-700">Add stakeholder</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[11px] text-zinc-400 hover:text-zinc-600"
+        >
+          Cancel
+        </button>
+      </div>
+      {!contactId ? (
+        <div className="relative">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Search contact by name or email..."
+            value={contactQuery}
+            onChange={(e) => setContactQuery(e.target.value)}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          {contactQuery && filteredContacts.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-0.5 z-10 bg-white border border-zinc-200 rounded shadow-md max-h-48 overflow-y-auto">
+              {filteredContacts.slice(0, 8).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    setContactId(c.id)
+                    setContactName(c.name)
+                    setContactQuery('')
+                  }}
+                  className="w-full text-left px-2 py-1.5 text-xs hover:bg-zinc-50 flex items-center justify-between"
+                >
+                  <span className="text-zinc-800 font-medium">{c.name}</span>
+                  <span className="text-[11px] text-zinc-400 truncate ml-2">
+                    {c.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {contactQuery && filteredContacts.length === 0 && (
+            <p className="text-[11px] text-zinc-400 mt-1">
+              No contacts match. Create one in Contacts first.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center justify-between bg-white border border-zinc-200 rounded px-2 py-1">
+          <span className="text-xs text-zinc-800">{contactName}</span>
+          <button
+            type="button"
+            onClick={() => { setContactId(''); setContactName('') }}
+            className="text-[11px] text-zinc-400 hover:text-zinc-600"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-1.5">
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          className="px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+        >
+          {ROLE_OPTIONS.map((r) => (
+            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+          ))}
+        </select>
+        <select
+          value={sentiment}
+          onChange={(e) => setSentiment(e.target.value)}
+          className="px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400 capitalize"
+        >
+          {SENTIMENT_OPTIONS.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select
+          value={influence}
+          onChange={(e) => setInfluence(e.target.value)}
+          className="px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400 capitalize"
+        >
+          {INFLUENCE_OPTIONS.map((i) => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
+      </div>
+
+      <button
+        type="button"
+        onClick={submit}
+        disabled={create.isPending || !contactId}
+        className="w-full py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+      >
+        {create.isPending ? 'Adding...' : 'Add to deal'}
+      </button>
+    </div>
+  )
+}
+
+function StakeholderMap({ stakeholders }: { stakeholders: Stakeholder[] }) {
+  if (!stakeholders.length) {
+    return <p className="text-xs text-zinc-400 py-3">No stakeholders mapped yet.</p>
+  }
+
+  // Layout: champion(s) center, EB top, technical/coach left, blockers/cyber right, others bottom.
+  const groups: Record<string, Stakeholder[]> = {
+    top: [],     // economic buyer + parent_company_standards
+    center: [],  // champion
+    left: [],    // technical_buyer, coach, user
+    right: [],   // blocker, ot_cyber, it_cyber
+    bottom: [],  // operations, maintenance, procurement, legal, finance
+  }
+  for (const s of stakeholders) {
+    if (s.role === 'economic_buyer' || s.role === 'parent_company_standards') groups.top.push(s)
+    else if (s.role === 'champion') groups.center.push(s)
+    else if (['technical_buyer', 'coach', 'user'].includes(s.role)) groups.left.push(s)
+    else if (['blocker', 'ot_cyber', 'it_cyber'].includes(s.role)) groups.right.push(s)
+    else groups.bottom.push(s)
+  }
+
+  return (
+    <div className="bg-zinc-50/70 border border-zinc-200 rounded-lg p-4">
+      <div className="grid grid-cols-3 gap-3 items-stretch">
+        <div /> {/* spacer */}
+        <div className="space-y-1.5">
+          {groups.top.map((s) => <MapNode key={s.id} s={s} />)}
+        </div>
+        <div /> {/* spacer */}
+
+        <div className="space-y-1.5">
+          {groups.left.map((s) => <MapNode key={s.id} s={s} />)}
+        </div>
+        <div className="space-y-1.5">
+          {groups.center.map((s) => <MapNode key={s.id} s={s} highlight />)}
+          {groups.center.length === 0 && (
+            <div className="border-2 border-dashed border-red-300 bg-red-50/30 rounded p-2 text-center">
+              <p className="text-[11px] font-medium text-red-600">No champion mapped</p>
+              <p className="text-[10px] text-red-500/80 mt-0.5">
+                The single biggest predictor of deal slip
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          {groups.right.map((s) => <MapNode key={s.id} s={s} />)}
+        </div>
+      </div>
+
+      {groups.bottom.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-zinc-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+          {groups.bottom.map((s) => <MapNode key={s.id} s={s} compact />)}
+        </div>
+      )}
+
+      <div className="mt-3 pt-2 border-t border-zinc-200 flex items-center gap-3 text-[10px] text-zinc-400">
+        <span>Sentiment:</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> supportive</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> neutral</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> opposed</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300" /> unknown</span>
+        <span className="ml-auto">Border thickness = influence</span>
+      </div>
+    </div>
+  )
+}
+
+function MapNode({ s, highlight, compact }: { s: Stakeholder; highlight?: boolean; compact?: boolean }) {
+  const sentimentColor = SENTIMENT_COLORS[s.sentiment.toLowerCase()] ?? SENTIMENT_COLORS.unknown
+  const borderClass =
+    s.influence === 'high' ? 'border-2' : s.influence === 'medium' ? 'border' : 'border border-dashed'
+  const ringClass = highlight ? 'ring-2 ring-emerald-300 ring-offset-1' : ''
+  return (
+    <div
+      className={`bg-white rounded ${borderClass} border-zinc-300 ${ringClass} ${compact ? 'p-1.5' : 'p-2'} text-left`}
+      title={`${s.role} · ${s.sentiment} · ${s.influence} influence`}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sentimentColor}`} />
+        <span className={`font-medium text-zinc-800 truncate ${compact ? 'text-[11px]' : 'text-xs'}`}>
+          {s.name}
+        </span>
+      </div>
+      <p className={`text-zinc-500 truncate ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+        {ROLE_LABELS[s.role] ?? s.role}
+        {s.title && ` · ${s.title}`}
+      </p>
+    </div>
+  )
+}
 
 function StakeholderTable({
   stakeholders, dealId,
@@ -838,7 +1141,7 @@ export default function DealDetailPage({
           </div>
 
           <Section title="Stakeholders">
-            <StakeholderTable stakeholders={stakeholders} dealId={id} />
+            <StakeholdersSection stakeholders={stakeholders} dealId={id} />
           </Section>
 
           <Section title="Meetings">

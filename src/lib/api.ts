@@ -1266,6 +1266,33 @@ export function useDeleteCompliance(bidId: string) {
 }
 
 // =====================================================================
+// PR6 — Unified search for the Cmd-K palette + create-stakeholder hook
+// =====================================================================
+
+export interface SearchResult {
+  kind: "deal" | "contact" | "company" | "bid" | "plant";
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+}
+
+export function useSearch(query: string) {
+  return useQuery({
+    queryKey: ["search", query],
+    queryFn: async () => {
+      const resp = await apiFetch<{ results: SearchResult[] }>(
+        "/api/dashboard/search",
+        { q: query },
+      );
+      return resp.results;
+    },
+    enabled: query.length > 0,
+    staleTime: 5_000,
+  });
+}
+
+// =====================================================================
 // PR4 — Web chat panel. Talks to the same agent as Telegram via the
 // existing POST /chat endpoint. Voice in the browser uses the Web
 // Speech API (Chrome + mobile Safari) — no backend transcription

@@ -331,15 +331,30 @@ function NewContactForm({ onClose }: { onClose: () => void }) {
   )
 }
 
+type SortKey = 'name' | 'company' | 'last_touch'
+
 export default function ContactsPage() {
   const [query, setQuery] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
 
   const { data, isLoading } = useContacts(query)
-  const contacts: Contact[] = data ?? []
   const remove = useDeleteEntity()
   const destroy = useConfirmDestroy()
+
+  // Sort client-side — list is small enough that re-fetching for sort
+  // would be more expensive than a JS sort.
+  const contacts: Contact[] = (data ?? []).slice().sort((a, b) => {
+    if (sortKey === 'name') return a.name.localeCompare(b.name)
+    if (sortKey === 'company') return (a.company || '').localeCompare(b.company || '')
+    if (sortKey === 'last_touch') {
+      const ta = a.last_touch ? new Date(a.last_touch).getTime() : 0
+      const tb = b.last_touch ? new Date(b.last_touch).getTime() : 0
+      return tb - ta
+    }
+    return 0
+  })
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -382,6 +397,24 @@ export default function ContactsPage() {
             placeholder="Search contacts..."
             className="w-full pl-8 pr-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-300 focus:border-zinc-300 transition-colors"
           />
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-500">
+          <span>Sort:</span>
+          {[
+            { k: 'name' as const, label: 'Name' },
+            { k: 'company' as const, label: 'Company' },
+            { k: 'last_touch' as const, label: 'Last touch' },
+          ].map((opt) => (
+            <button
+              key={opt.k}
+              type="button"
+              onClick={() => setSortKey(opt.k)}
+              className={`px-1.5 py-0.5 rounded ${sortKey === opt.k ? 'bg-zinc-900 text-white' : 'hover:bg-zinc-100 text-zinc-600'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
         <div className="bg-white rounded-lg border border-zinc-200 shadow-sm overflow-hidden">
