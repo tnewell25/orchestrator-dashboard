@@ -5,12 +5,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   useDealDetail,
+  useDealHealth,
   usePatchDeal,
   useCreateAction,
   usePatchAction,
   usePatchStakeholder,
   useCreateMeeting,
   useDeleteEntity,
+  useSuggestMeddic,
   type DealDetailResponse,
   type MeddicData,
   type Stakeholder,
@@ -128,6 +130,53 @@ function EditableText({
       }}
       className={`w-full px-1 -mx-1 text-xs bg-white border border-zinc-300 rounded focus:outline-none focus:border-zinc-500 ${className}`}
     />
+  )
+}
+
+// --- Health bar (forecast bucket + meddic + champion + slip) ----------
+
+function HealthBar({ dealId }: { dealId: string }) {
+  const { data } = useDealHealth(dealId)
+  if (!data) return null
+
+  const bucketStyle =
+    data.forecast_bucket === 'commit'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : data.forecast_bucket === 'best_case'
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-zinc-100 text-zinc-700 border-zinc-200'
+  const bucketLabel =
+    data.forecast_bucket === 'commit' ? 'Commit'
+    : data.forecast_bucket === 'best_case' ? 'Best Case'
+    : 'Pipeline'
+
+  const meddicTone = data.meddic_pct >= 70 ? 'text-emerald-700' : data.meddic_pct >= 40 ? 'text-amber-700' : 'text-red-600'
+  const champTone = data.champion_score >= 70 ? 'text-emerald-700' : data.champion_score >= 40 ? 'text-amber-700' : 'text-red-600'
+  const slipTone = data.slip_risk >= 70 ? 'text-red-600' : data.slip_risk >= 40 ? 'text-amber-700' : 'text-emerald-700'
+
+  return (
+    <div className="flex items-center flex-wrap gap-2 py-3 border-b border-zinc-200 text-[11px]">
+      <span className={`px-2 py-0.5 rounded font-medium border ${bucketStyle}`}>
+        {bucketLabel}
+      </span>
+      <span className={meddicTone}>MEDDIC {data.meddic_pct}%</span>
+      <span className={champTone} title={data.champion_detail}>
+        Champion {data.champion_score}/100
+      </span>
+      <span className={slipTone} title="Probability of slipping past the close date">
+        Slip {data.slip_risk}%
+      </span>
+      {data.meddic_missing.length > 0 && (
+        <span className="text-zinc-400">
+          missing: {data.meddic_missing.slice(0, 3).join(', ')}
+        </span>
+      )}
+      {data.reasons.length > 0 && (
+        <span className="text-zinc-500 ml-auto truncate max-w-md">
+          {data.reasons.join(' · ')}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -342,10 +391,36 @@ function StakeholderTable({
 function MeetingTimeline({ meetings, dealId }: { meetings: Meeting[]; dealId: string }) {
   const create = useCreateMeeting(dealId)
   const remove = useDeleteEntity()
+  const patch = usePatchDeal()
+  const suggest = useSuggestMeddic()
   const [adding, setAdding] = useState(false)
   const [attendees, setAttendees] = useState('')
   const [summary, setSummary] = useState('')
   const [decisions, setDecisions] = useState('')
+  const [suggestionFor, setSuggestionFor] = useState<string | null>(null)
+  const [suggestionData, setSuggestionData] = useState<Record<string, string> | null>(null)
+  const [suggestionRationale, setSuggestionRationale] = useState<string>('')
+
+  const runSuggest = async (meetingId: string) => {
+    setSuggestionFor(meetingId)
+    setSuggestionData(null)
+    setSuggestionRationale('')
+    try {
+      const res = await suggest.mutateAsync(meetingId)
+      setSuggestionData(res.suggestions)
+      setSuggestionRationale(res.rationale)
+    } catch (e) {
+      alert((e as Error).message)
+      setSuggestionFor(null)
+    }
+  }
+
+  const applyAll = async (deal_id: string) => {
+    if (!suggestionData) return
+    await patch.mutateAsync({ id: deal_id, ...suggestionData })
+    setSuggestionFor(null)
+    setSuggestionData(null)
+  }
 
   const submit = async () => {
     if (!summary.trim() && !attendees.trim()) return
@@ -363,33 +438,100 @@ function MeetingTimeline({ meetings, dealId }: { meetings: Meeting[]; dealId: st
           <p className="text-xs text-zinc-400 py-2">No meetings recorded.</p>
         ) : (
           sorted.map((m) => (
-            <div key={m.id} className="py-2 border-b border-zinc-100 last:border-0 group flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">
-                    {formatDate(m.date)}
-                  </span>
-                  {m.attendees && (
-                    <span className="text-[11px] text-zinc-400 truncate">{m.attendees}</span>
+            <div key={m.id} className="py-2 border-b border-zinc-100 last:border-0 group">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">
+                      {formatDate(m.date)}
+                    </span>
+                    {m.attendees && (
+                      <span className="text-[11px] text-zinc-400 truncate">{m.attendees}</span>
+                    )}
+                  </div>
+                  {m.summary && (
+                    <p className="text-xs text-zinc-700 leading-relaxed">{m.summary}</p>
+                  )}
+                  {m.decisions && (
+                    <p className="text-[11px] text-zinc-500 mt-0.5">
+                      <span className="font-medium text-zinc-600">Decisions:</span> {m.decisions}
+                    </p>
                   )}
                 </div>
-                {m.summary && (
-                  <p className="text-xs text-zinc-700 leading-relaxed">{m.summary}</p>
-                )}
-                {m.decisions && (
-                  <p className="text-[11px] text-zinc-500 mt-0.5">
-                    <span className="font-medium text-zinc-600">Decisions:</span> {m.decisions}
-                  </p>
-                )}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => runSuggest(m.id)}
+                    disabled={suggest.isPending && suggestionFor === m.id}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-100"
+                    title="Use the agent to suggest MEDDIC field updates from this meeting"
+                  >
+                    {suggest.isPending && suggestionFor === m.id ? '...' : 'AI MEDDIC'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove.mutate({ entity: 'meetings', id: m.id })}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
+                    title="Delete meeting"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => remove.mutate({ entity: 'meetings', id: m.id })}
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
-                title="Delete meeting"
-              >
-                ×
-              </button>
+              {suggestionFor === m.id && suggestionData && (
+                <div className="mt-2 ml-2 p-2 bg-violet-50/60 border border-violet-200 rounded">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-medium text-violet-800 uppercase tracking-wide">
+                      Suggested MEDDIC updates
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setSuggestionFor(null); setSuggestionData(null); }}
+                      className="text-[11px] text-zinc-400 hover:text-zinc-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {Object.keys(suggestionData).length === 0 ? (
+                    <p className="text-[11px] text-zinc-500">
+                      Agent found no concrete MEDDIC updates from this meeting.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="space-y-1.5 mb-2">
+                        {Object.entries(suggestionData).map(([k, v]) => (
+                          <div key={k} className="text-[11px]">
+                            <span className="font-medium text-zinc-700 capitalize">{k.replace('_', ' ')}:</span>{' '}
+                            <span className="text-zinc-600">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {suggestionRationale && (
+                        <p className="text-[11px] text-zinc-500 italic mb-2">
+                          {suggestionRationale}
+                        </p>
+                      )}
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => applyAll(dealId)}
+                          disabled={patch.isPending}
+                          className="px-2.5 py-0.5 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+                        >
+                          Apply all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setSuggestionFor(null); setSuggestionData(null); }}
+                          className="px-2 py-0.5 text-[11px] text-zinc-500 hover:text-zinc-700"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -660,6 +802,7 @@ export default function DealDetailPage({
               })
             }
           />
+          <HealthBar dealId={id} />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-4 border-b border-zinc-200 text-xs">
             <div>

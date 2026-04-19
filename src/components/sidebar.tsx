@@ -11,10 +11,12 @@ import {
   FileText,
   Factory,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Pipeline", icon: LayoutDashboard },
+  { href: "/forecast", label: "Forecast", icon: TrendingUp },
   { href: "/bids", label: "Bids", icon: FileText },
   { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/plants", label: "Plants", icon: Factory },

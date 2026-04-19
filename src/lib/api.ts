@@ -1323,6 +1323,86 @@ export async function sendChatMessage(
   return (data?.response as string) ?? "";
 }
 
+// =====================================================================
+// PR5 — Forecast + champion strength + AI MEDDIC suggester
+// =====================================================================
+
+export interface ForecastDealRow {
+  id: string;
+  name: string;
+  stage: string;
+  value_usd: number;
+  close_date: string | null;
+  meddic_pct: number;
+  meddic_missing: string[];
+  champion_score: number;
+  champion_detail: string;
+  slip_risk: number;
+  reasons: string[];
+}
+
+export interface ForecastResponse {
+  buckets: {
+    commit: ForecastDealRow[];
+    best_case: ForecastDealRow[];
+    pipeline: ForecastDealRow[];
+  };
+  totals: Record<string, { count: number; value: number }>;
+}
+
+export function useForecast() {
+  return useQuery({
+    queryKey: ["forecast"],
+    queryFn: () => apiFetch<ForecastResponse>("/api/dashboard/forecast"),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export interface DealHealthResponse {
+  deal_id: string;
+  meddic_pct: number;
+  meddic_missing: string[];
+  champion_score: number;
+  champion_detail: string;
+  slip_risk: number;
+  forecast_bucket: "commit" | "best_case" | "pipeline";
+  reasons: string[];
+}
+
+export function useDealHealth(dealId: string) {
+  return useQuery({
+    queryKey: ["deal-health", dealId],
+    queryFn: () => apiFetch<DealHealthResponse>(`/api/dashboard/deals/${dealId}/health`),
+    enabled: !!dealId,
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export interface MeddicSuggestion {
+  deal_id: string;
+  meeting_id: string;
+  suggestions: {
+    metrics?: string;
+    decision_criteria?: string;
+    decision_process?: string;
+    paper_process?: string;
+    pain?: string;
+  };
+  rationale: string;
+}
+
+export function useSuggestMeddic() {
+  return useMutation({
+    mutationFn: (meetingId: string) =>
+      apiWrite<MeddicSuggestion>(
+        "POST",
+        `/api/dashboard/meetings/${meetingId}/suggest-meddic`,
+      ),
+  });
+}
+
 export function useSendChat(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
