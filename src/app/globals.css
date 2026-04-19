@@ -1,20 +1,69 @@
 @import "tailwindcss";
 
+/* ===================================================================
+   Design tokens — single source of truth.
+   Used both by Tailwind utilities (via @theme inline) and direct CSS.
+   =================================================================== */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
 
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-won: #22c55e;
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-won: #10b981;
   --color-lost: #ef4444;
   --color-warning: #f59e0b;
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #1e293b;
+  /* Surfaces */
+  --background: #fafafa;     /* page background — warmer than slate */
+  --surface: #ffffff;        /* cards, panels */
+  --surface-soft: #f4f4f5;   /* secondary surface (filter chips, hover) */
+  --surface-mute: #fafafa;   /* tertiary */
+  --foreground: #18181b;     /* primary text — zinc-900 */
+  --muted: #52525b;          /* zinc-600 */
+  --subtle: #71717a;         /* zinc-500 */
+  --faint: #a1a1aa;          /* zinc-400 */
+
+  /* Borders */
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  /* Brand / accent — refined indigo, not generic blue */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-soft: #eef2ff;
+
+  /* States */
+  --success: #10b981;
+  --success-soft: #ecfdf5;
+  --warn: #f59e0b;
+  --warn-soft: #fffbeb;
+  --danger: #ef4444;
+  --danger-soft: #fef2f2;
+  --info: #0ea5e9;
+  --info-soft: #f0f9ff;
+
+  /* Radius scale */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+
+  /* Shadow scale */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 12px 24px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
 }
 
 * {
@@ -25,35 +74,92 @@ html {
   font-size: 14px;
 }
 
+html, body {
+  height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11"; /* Inter stylistic alts */
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Tabular numbers everywhere $ + dates appear */
+.tabular-nums { font-variant-numeric: tabular-nums; }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+/* ===================================================================
+   Custom scrollbar — minimal, zinc-toned
+   =================================================================== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
+  background: #d4d4d8;
   border-radius: 3px;
+  transition: background var(--dur-base);
+}
+::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+* { scrollbar-width: thin; scrollbar-color: #d4d4d8 transparent; }
+
+/* ===================================================================
+   Focus rings — subtle, branded, accessible
+   =================================================================== */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+/* ===================================================================
+   Skeleton loading — subtle pulse used by <Skeleton/>
+   =================================================================== */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f4f4f5 0%, #e4e4e7 50%, #f4f4f5 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s var(--ease-out) infinite;
+  border-radius: var(--r-md);
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-/* Firefox scrollbar */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #94a3b8 transparent;
+/* ===================================================================
+   Reduced motion — respect user preference
+   =================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
+
+/* ===================================================================
+   Subtle list-item enter — fade up on first paint
+   =================================================================== */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up { animation: fade-in-up var(--dur-base) var(--ease-out); }
+
+/* ===================================================================
+   Bottom nav safe-area inset for iOS
+   =================================================================== */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }

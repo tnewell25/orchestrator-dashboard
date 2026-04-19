@@ -134,11 +134,12 @@ export function ChatDrawer() {
 
   return (
     <>
-      {/* Floating action button — always reachable from any page */}
+      {/* Floating action button — always reachable. Sits above the mobile
+          bottom-nav on phones; bottom-right on desktop. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white shadow-lg flex items-center justify-center transition-transform active:scale-95"
+        className="fixed bottom-20 lg:bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-gradient-to-br from-zinc-900 to-zinc-950 hover:from-zinc-800 hover:to-zinc-900 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-all duration-200 active:scale-95"
         title="Chat with the agent (Cmd+/)"
         aria-label="Open chat"
       >

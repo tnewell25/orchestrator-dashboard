@@ -9,6 +9,10 @@ import {
   useCompanies,
   JOB_STAGES,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 
 const STAGE_BADGES: Record<string, string> = {
   scheduled: "bg-slate-100 text-slate-700",
@@ -59,24 +63,22 @@ export default function JobsPage() {
   return (
     <div className="min-h-screen bg-zinc-50">
       <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        <div className="flex items-center justify-between mb-3 gap-2">
-          <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-zinc-800">Jobs</h1>
-            <p className="text-[11px] text-zinc-500 mt-0.5 hidden sm:block">
-              Won deals → execution. Daily logs, change orders, punchlist all live here.
-            </p>
-          </div>
-          {!adding && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 shrink-0"
-            >
-              <Plus size={12} />
-              New
-            </button>
-          )}
-        </div>
+        <PageHeader
+          title="Jobs"
+          description="Won deals → execution. Daily logs, change orders, punchlist all live here."
+          meta={
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              {jobs.length} {jobs.length === 1 ? "job" : "jobs"}
+            </span>
+          }
+          actions={
+            !adding && (
+              <Button size="sm" onClick={() => setAdding(true)}>
+                <Plus size={12} /> New
+              </Button>
+            )
+          }
+        />
 
         <div className="flex items-center gap-0.5 bg-white border border-zinc-200 rounded-lg p-0.5 mb-3 w-fit overflow-x-auto max-w-full">
           <button
@@ -163,12 +165,18 @@ export default function JobsPage() {
 
         <div className="bg-white rounded-lg border border-zinc-200 shadow-sm overflow-hidden">
           {isLoading ? (
-            <div className="py-8 text-center text-xs text-zinc-400">Loading...</div>
+            <div className="p-3"><SkeletonList rows={5} height={56} /></div>
           ) : jobs.length === 0 ? (
-            <div className="py-8 text-center">
-              <HardHat size={20} className="inline text-zinc-300 mb-2" />
-              <p className="text-xs text-zinc-400">No jobs in this view.</p>
-            </div>
+            <EmptyState
+              icon={HardHat}
+              title={stage ? `No ${stage.replace("_", " ")} jobs` : "No jobs yet"}
+              description={stage ? "Try a different stage filter." : "Jobs are post-won execution. Track scope, schedule, daily logs, change orders, and punchlist."}
+              action={!stage && !adding && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={12} /> Create first job
+                </Button>
+              )}
+            />
           ) : (
             jobs.map((j) => (
               <Link

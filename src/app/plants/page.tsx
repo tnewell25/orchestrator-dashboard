@@ -9,6 +9,10 @@ import {
   useCreatePlant,
   PLANT_SITE_TYPES,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 
 const SITE_TYPE_LABELS: Record<string, string> = {
   refinery: "Refinery",
@@ -51,30 +55,23 @@ export default function PlantsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-sm font-semibold text-zinc-800">Plants</h1>
-            <p className="text-[11px] text-zinc-500 mt-0.5">
-              Sites belonging to your accounts. A deal at Bosch Stuttgart is not the same as Bosch Mexico.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
+      <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <PageHeader
+          title="Plants"
+          description="Sites belonging to your accounts. A deal at Bosch Stuttgart is not the same as Bosch Mexico."
+          meta={
             <span className="text-[11px] text-zinc-400 tabular-nums">
               {plants.length} {plants.length === 1 ? "plant" : "plants"}
             </span>
-            {!adding && (
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
-              >
-                <Plus size={12} />
-                New plant
-              </button>
-            )}
-          </div>
-        </div>
+          }
+          actions={
+            !adding && (
+              <Button size="sm" onClick={() => setAdding(true)}>
+                <Plus size={12} /> New
+              </Button>
+            )
+          }
+        />
 
         {adding && (
           <div className="bg-white border border-zinc-200 rounded-lg shadow-sm p-3 mb-3 space-y-1.5">
@@ -145,16 +142,18 @@ export default function PlantsPage() {
 
         <div className="bg-white rounded-lg border border-zinc-200 shadow-sm overflow-hidden">
           {isLoading ? (
-            <div className="py-8 text-center">
-              <p className="text-xs text-zinc-400">Loading...</p>
-            </div>
+            <div className="p-3"><SkeletonList rows={5} height={48} /></div>
           ) : plants.length === 0 ? (
-            <div className="py-8 text-center">
-              <Factory size={20} className="inline text-zinc-300 mb-2" />
-              <p className="text-xs text-zinc-400">
-                {query ? "No plants match." : "No plants yet."}
-              </p>
-            </div>
+            <EmptyState
+              icon={Factory}
+              title={query ? "No plants match" : "No plants yet"}
+              description={query ? "Try a different search." : "Add a plant to attach deals to specific sites — most companies have many."}
+              action={!query && !adding && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={12} /> Add first plant
+                </Button>
+              )}
+            />
           ) : (
             plants.map((p) => (
               <Link

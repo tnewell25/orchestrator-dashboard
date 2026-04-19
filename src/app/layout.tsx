@@ -4,6 +4,7 @@ import { Providers } from "@/components/providers";
 import { Sidebar } from "@/components/sidebar";
 import { ChatDrawer } from "@/components/chat-drawer";
 import { CommandPalette } from "@/components/command-palette";
+import { MobileNav } from "@/components/mobile-nav";
 import "./globals.css";
 
 const inter = Inter({
@@ -28,10 +29,14 @@ export default function RootLayout({
         <Providers>
           <Sidebar />
           {/* Top padding on mobile reserves space for the hamburger trigger.
-              Resets to 0 on lg breakpoint where the static sidebar takes over. */}
-          <main className="flex-1 overflow-auto pt-14 lg:pt-0">{children}</main>
+              Bottom padding reserves space for the mobile bottom nav.
+              Both reset to 0 on lg where the static sidebar takes over. */}
+          <main className="flex-1 overflow-auto pt-14 pb-16 lg:pt-0 lg:pb-0">
+            {children}
+          </main>
           <ChatDrawer />
           <CommandPalette />
+          <MobileNav />
         </Providers>
       </body>
     </html>

@@ -5,6 +5,10 @@ import Link from "next/link";
 import { FileText, Plus, Loader2 } from "lucide-react";
 import { useBidsList, useCreateBid, useCompanies } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 
 const STAGE_OPTIONS = [
   { value: "", label: "All" },
@@ -83,43 +87,43 @@ export default function BidsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-3">
-          <h1 className="text-sm font-semibold text-zinc-800">Bids / RFPs</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-zinc-400 tabular-nums hidden sm:inline">
+      <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <PageHeader
+          title="Bids / RFPs"
+          description="Deadline-driven RFP tracker. Color-coded urgency: red ≤7d, amber ≤30d."
+          meta={
+            <span className="text-[11px] text-zinc-400 tabular-nums">
               {bids.length} {bids.length === 1 ? "bid" : "bids"}
             </span>
-            {bids.length > 0 && (
-              <button
-                type="button"
-                onClick={() => downloadCsv(`bids-${new Date().toISOString().slice(0, 10)}`, bids, [
-                  { key: "name", header: "Name" },
-                  { key: "company", header: "Company" },
-                  { key: "stage", header: "Stage" },
-                  { key: "value_usd", header: "Value (USD)" },
-                  { key: "submission_deadline", header: "Submission deadline" },
-                  { key: "qa_deadline", header: "Q&A deadline" },
-                  { key: "deal", header: "Deal" },
-                  { key: "rfp_url", header: "RFP URL" },
-                ])}
-                className="px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 rounded border border-zinc-200"
-              >
-                CSV
-              </button>
-            )}
-            {!adding && (
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
-              >
-                <Plus size={12} />
-                New
-              </button>
-            )}
-          </div>
-        </div>
+          }
+          actions={
+            <>
+              {bids.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => downloadCsv(`bids-${new Date().toISOString().slice(0, 10)}`, bids, [
+                    { key: "name", header: "Name" },
+                    { key: "company", header: "Company" },
+                    { key: "stage", header: "Stage" },
+                    { key: "value_usd", header: "Value (USD)" },
+                    { key: "submission_deadline", header: "Submission deadline" },
+                    { key: "qa_deadline", header: "Q&A deadline" },
+                    { key: "deal", header: "Deal" },
+                    { key: "rfp_url", header: "RFP URL" },
+                  ])}
+                >
+                  CSV
+                </Button>
+              )}
+              {!adding && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={12} /> New
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {/* Stage filter */}
         <div className="flex items-center gap-0.5 bg-white border border-zinc-200 rounded-lg p-0.5 mb-3 w-fit">
@@ -217,14 +221,18 @@ export default function BidsPage() {
             <div className="text-right">Value</div>
           </div>
           {isLoading ? (
-            <div className="py-8 text-center">
-              <Loader2 size={16} className="inline animate-spin text-zinc-400" />
-            </div>
+            <div className="p-3"><SkeletonList rows={5} height={48} /></div>
           ) : bids.length === 0 ? (
-            <div className="py-8 text-center">
-              <FileText size={20} className="inline text-zinc-300 mb-2" />
-              <p className="text-xs text-zinc-400">No bids in this view.</p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title={stage ? `No ${stage.replace("_", " ")} bids` : "No bids tracked yet"}
+              description={stage ? "Try a different stage filter." : "RFPs and bid opportunities live here. Color-coded by submission deadline."}
+              action={!stage && !adding && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={12} /> Add first bid
+                </Button>
+              )}
+            />
           ) : (
             bids.map((b) => {
               const dl = deadlineLabel(b.submission_deadline);

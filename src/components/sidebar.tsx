@@ -23,20 +23,25 @@ import {
   X,
 } from "lucide-react";
 
-const navItems = [
+type NavItem = { href: string; label: string; icon: typeof Menu };
+
+const operationalItems: NavItem[] = [
   { href: "/", label: "Pipeline", icon: LayoutDashboard },
   { href: "/forecast", label: "Forecast", icon: TrendingUp },
   { href: "/bids", label: "Bids", icon: FileText },
   { href: "/jobs", label: "Jobs", icon: HardHat },
-  { href: "/companies", label: "Companies", icon: Building2 },
-  { href: "/plants", label: "Plants", icon: Factory },
-  { href: "/assets", label: "Assets", icon: Cpu },
-  { href: "/contracts", label: "Contracts", icon: Wrench },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/activity", label: "Inbox", icon: Activity },
 ];
 
-const libraryItems = [
+const accountItems: NavItem[] = [
+  { href: "/companies", label: "Companies", icon: Building2 },
+  { href: "/plants", label: "Plants", icon: Factory },
+  { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/assets", label: "Assets", icon: Cpu },
+  { href: "/contracts", label: "Contracts", icon: Wrench },
+];
+
+const libraryItems: NavItem[] = [
   { href: "/battle-cards", label: "Battle cards", icon: Sword },
   { href: "/proposals", label: "Proposals", icon: Library },
   { href: "/win-loss", label: "Win/Loss", icon: Trophy },
@@ -47,7 +52,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close on route change (mobile)
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
@@ -55,58 +59,70 @@ export function Sidebar() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  const NavLink = ({ href, label, icon: Icon, dim }: { href: string; label: string; icon: typeof Menu; dim?: boolean }) => {
-    const active = isActive(href);
+  const NavLink = ({ item }: { item: NavItem }) => {
+    const active = isActive(item.href);
+    const Icon = item.icon;
     return (
       <Link
-        href={href}
-        className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
+        href={item.href}
+        className={`group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150 ${
           active
-            ? "bg-slate-800 text-white"
-            : dim
-              ? "text-slate-500 hover:text-slate-300 hover:bg-slate-800/60"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+            ? "bg-zinc-900 text-white shadow-sm"
+            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
         }`}
       >
-        <Icon size={15} strokeWidth={1.8} />
-        {label}
+        <Icon
+          size={15}
+          strokeWidth={active ? 2 : 1.7}
+          className={active ? "text-white" : "text-zinc-500 group-hover:text-zinc-700"}
+        />
+        <span className="truncate">{item.label}</span>
       </Link>
     );
   };
 
+  const NavGroup = ({ label, items }: { label?: string; items: NavItem[] }) => (
+    <div>
+      {label && (
+        <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold px-2.5 mb-1.5 mt-3">
+          {label}
+        </p>
+      )}
+      <div className="space-y-0.5">
+        {items.map((item) => <NavLink key={item.href} item={item} />)}
+      </div>
+    </div>
+  );
+
   const sidebarBody = (
     <>
-      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-        <h1 className="text-sm font-semibold text-white tracking-tight">
-          Orchestrator
-        </h1>
+      <div className="px-4 py-3.5 border-b border-zinc-200 flex items-center justify-between bg-white">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-zinc-800 to-zinc-950 flex items-center justify-center text-white text-[10px] font-bold tracking-tight">
+            O
+          </div>
+          <h1 className="text-sm font-semibold text-zinc-900 tracking-tight">
+            Orchestrator
+          </h1>
+        </div>
         <button
           type="button"
           onClick={() => setMobileOpen(false)}
-          className="lg:hidden p-1 text-slate-400 hover:text-white"
+          className="lg:hidden p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors"
           aria-label="Close menu"
         >
           <X size={16} />
         </button>
       </div>
 
-      <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => (
-          <NavLink key={item.href} {...item} />
-        ))}
-
-        <div className="pt-3 mt-2 border-t border-slate-800/60">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-2.5 mb-1">
-            Library
-          </p>
-          {libraryItems.map((item) => (
-            <NavLink key={item.href} {...item} dim />
-          ))}
-        </div>
+      <nav className="flex-1 py-3 px-2 overflow-y-auto">
+        <NavGroup items={operationalItems} />
+        <NavGroup label="Accounts" items={accountItems} />
+        <NavGroup label="Library" items={libraryItems} />
       </nav>
 
-      <div className="px-2 py-2 border-t border-slate-800">
-        <NavLink href="/usage" label="Usage" icon={Gauge} dim />
+      <div className="px-2 py-2 border-t border-zinc-200">
+        <NavLink item={{ href: "/usage", label: "Usage", icon: Gauge }} />
       </div>
     </>
   );
@@ -117,7 +133,7 @@ export function Sidebar() {
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3 left-3 z-30 w-10 h-10 rounded bg-slate-900 text-white shadow-md flex items-center justify-center"
+        className="lg:hidden fixed top-3 left-3 z-30 w-10 h-10 rounded-lg bg-white border border-zinc-200 shadow-sm text-zinc-700 hover:text-zinc-900 hover:bg-zinc-50 flex items-center justify-center transition-all"
         aria-label="Open menu"
       >
         <Menu size={18} />
@@ -126,14 +142,14 @@ export function Sidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Sidebar — fixed on mobile (slide in), static on desktop */}
+      {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 w-[220px] bg-slate-900 text-slate-300 flex flex-col shrink-0 h-screen transform transition-transform duration-200 ${
+        className={`fixed lg:sticky top-0 left-0 z-40 w-[220px] bg-white border-r border-zinc-200 flex flex-col shrink-0 h-screen transform transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
