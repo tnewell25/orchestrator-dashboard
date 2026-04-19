@@ -12,6 +12,8 @@ import {
   Factory,
   ShieldCheck,
   TrendingUp,
+  Cpu,
+  Wrench,
 } from "lucide-react";
 
 const navItems = [
@@ -20,6 +22,8 @@ const navItems = [
   { href: "/bids", label: "Bids", icon: FileText },
   { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/plants", label: "Plants", icon: Factory },
+  { href: "/assets", label: "Assets", icon: Cpu },
+  { href: "/contracts", label: "Contracts", icon: Wrench },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/specs", label: "Specs", icon: ShieldCheck },

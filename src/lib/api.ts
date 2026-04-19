@@ -526,7 +526,10 @@ type DeleteEntity =
   | "bids"
   | "stakeholders"
   | "plants"
-  | "specs";
+  | "specs"
+  | "assets"
+  | "co-sellers"
+  | "contracts";
 
 const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   deals: [["pipeline"], ["analytics"], ["activity"]],
@@ -538,6 +541,9 @@ const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   stakeholders: [["deal"]],
   plants: [["plants-list"], ["company"]],
   specs: [["specs"]],
+  assets: [["assets-list"], ["plant"]],
+  "co-sellers": [["co-sellers"]],
+  contracts: [["contracts-list"], ["plant"]],
 };
 
 export function useDeleteEntity() {
@@ -1040,6 +1046,24 @@ export interface PlantDetailResponse {
     value_usd: number;
     submission_deadline: string | null;
   }[];
+  assets: {
+    id: string;
+    name: string;
+    manufacturer: string;
+    model: string;
+    asset_type: string;
+    vendor: string;
+    quantity: number;
+    end_of_life_date: string | null;
+  }[];
+  contracts: {
+    id: string;
+    name: string;
+    contract_type: string;
+    value_usd_annual: number;
+    renewal_date: string | null;
+    status: string;
+  }[];
 }
 
 export function usePlants(filters?: { company_id?: string; q?: string }) {
@@ -1496,6 +1520,291 @@ export function useSendChat(sessionId: string) {
       qc.invalidateQueries({ queryKey: ["contacts"] });
       qc.invalidateQueries({ queryKey: ["companies-list"] });
       qc.invalidateQueries({ queryKey: ["bids-list"] });
+    },
+  });
+}
+
+// =====================================================================
+// PR8 — Assets + Co-sellers + Service Contracts
+// =====================================================================
+
+export const ASSET_TYPES = [
+  "dcs", "plc", "hmi", "scada", "safety_system", "drive", "motor",
+  "instrument", "network", "analyzer", "other",
+] as const;
+
+export const ASSET_VENDORS = ["us", "competitor", "partner"] as const;
+
+export const COSELLER_ROLES = [
+  "oem_rep", "channel_partner", "si_partner", "distributor", "consultant", "reseller",
+] as const;
+
+export const COSELLER_STATUSES = ["active", "introduced", "dormant", "replaced"] as const;
+
+export const CONTRACT_TYPES = [
+  "pm_quarterly", "pm_annual", "24x7_support", "on_call",
+  "parts_only", "training", "calibration", "other",
+] as const;
+
+export const CONTRACT_STATUSES = [
+  "active", "expiring", "expired", "cancelled", "renewed",
+] as const;
+
+// ---- Assets -------------------------------------------------------
+
+export interface AssetListItem {
+  id: string;
+  name: string;
+  manufacturer: string;
+  model: string;
+  asset_type: string;
+  quantity: number;
+  vendor: string;
+  serial_number: string;
+  installed_date: string | null;
+  end_of_life_date: string | null;
+  plant_id: string;
+  plant: string;
+  company_id: string | null;
+  notes: string;
+}
+
+export function useAssets(filters?: { plant_id?: string; manufacturer?: string; vendor?: string; q?: string }) {
+  return useQuery({
+    queryKey: ["assets-list", filters?.plant_id ?? "", filters?.manufacturer ?? "", filters?.vendor ?? "", filters?.q ?? ""],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters?.plant_id) params.plant_id = filters.plant_id;
+      if (filters?.manufacturer) params.manufacturer = filters.manufacturer;
+      if (filters?.vendor) params.vendor = filters.vendor;
+      if (filters?.q) params.q = filters.q;
+      const resp = await apiFetch<{ assets: AssetListItem[] }>(
+        "/api/dashboard/assets",
+        Object.keys(params).length ? params : undefined,
+      );
+      return resp.assets;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export interface AssetCreatePayload {
+  plant_id: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  asset_type?: string;
+  serial_number?: string;
+  quantity?: number;
+  installed_date?: string | null;
+  end_of_life_date?: string | null;
+  vendor?: string;
+  notes?: string;
+}
+
+export function useCreateAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AssetCreatePayload) =>
+      apiWrite<{ id: string; name: string }>("POST", "/api/dashboard/assets", payload),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["assets-list"] });
+      qc.invalidateQueries({ queryKey: ["plant", vars.plant_id] });
+    },
+  });
+}
+
+export interface AssetPatchPayload {
+  name?: string;
+  manufacturer?: string;
+  model?: string;
+  asset_type?: string;
+  serial_number?: string;
+  quantity?: number;
+  installed_date?: string | null;
+  end_of_life_date?: string | null;
+  vendor?: string;
+  notes?: string;
+  plant_id?: string;
+}
+
+export function usePatchAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: AssetPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/assets/${id}`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assets-list"] });
+      qc.invalidateQueries({ queryKey: ["plant"] });
+    },
+  });
+}
+
+// ---- Co-sellers ---------------------------------------------------
+
+export interface CoSellerItem {
+  id: string;
+  deal_id: string;
+  org_name: string;
+  role: string;
+  commission_pct: number;
+  status: string;
+  contact_id: string | null;
+  contact_name: string;
+  contact_title: string;
+  notes: string;
+}
+
+export function useCoSellers(dealId: string) {
+  return useQuery({
+    queryKey: ["co-sellers", dealId],
+    queryFn: async () => {
+      const resp = await apiFetch<{ co_sellers: CoSellerItem[] }>(
+        `/api/dashboard/deals/${dealId}/co-sellers`,
+      );
+      return resp.co_sellers;
+    },
+    enabled: !!dealId,
+    staleTime: 10_000,
+  });
+}
+
+export interface CoSellerCreatePayload {
+  org_name: string;
+  role?: string;
+  contact_id?: string | null;
+  commission_pct?: number;
+  status?: string;
+  notes?: string;
+}
+
+export function useCreateCoSeller(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CoSellerCreatePayload) =>
+      apiWrite<{ id: string; org_name: string }>(
+        "POST",
+        `/api/dashboard/deals/${dealId}/co-sellers`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["co-sellers", dealId] }),
+  });
+}
+
+export interface CoSellerPatchPayload {
+  org_name?: string;
+  role?: string;
+  contact_id?: string | null;
+  commission_pct?: number;
+  status?: string;
+  notes?: string;
+}
+
+export function usePatchCoSeller(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: CoSellerPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/co-sellers/${id}`,
+        payload,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["co-sellers", dealId] }),
+  });
+}
+
+// ---- Service Contracts --------------------------------------------
+
+export interface ContractListItem {
+  id: string;
+  name: string;
+  contract_type: string;
+  value_usd_annual: number;
+  start_date: string | null;
+  end_date: string | null;
+  renewal_date: string | null;
+  status: string;
+  company_id: string | null;
+  company: string;
+  plant_id: string | null;
+  plant: string;
+  notes: string;
+}
+
+export function useContracts(filters?: { company_id?: string; plant_id?: string; status?: string }) {
+  return useQuery({
+    queryKey: ["contracts-list", filters?.company_id ?? "", filters?.plant_id ?? "", filters?.status ?? ""],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters?.company_id) params.company_id = filters.company_id;
+      if (filters?.plant_id) params.plant_id = filters.plant_id;
+      if (filters?.status) params.status = filters.status;
+      const resp = await apiFetch<{ contracts: ContractListItem[] }>(
+        "/api/dashboard/contracts",
+        Object.keys(params).length ? params : undefined,
+      );
+      return resp.contracts;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export interface ContractCreatePayload {
+  company_id: string;
+  name: string;
+  plant_id?: string | null;
+  contract_type?: string;
+  value_usd_annual?: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  renewal_date?: string | null;
+  status?: string;
+  contact_id?: string | null;
+  notes?: string;
+}
+
+export function useCreateContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ContractCreatePayload) =>
+      apiWrite<{ id: string; name: string }>("POST", "/api/dashboard/contracts", payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contracts-list"] });
+      qc.invalidateQueries({ queryKey: ["plant"] });
+    },
+  });
+}
+
+export interface ContractPatchPayload {
+  name?: string;
+  contract_type?: string;
+  value_usd_annual?: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  renewal_date?: string | null;
+  status?: string;
+  contact_id?: string | null;
+  notes?: string;
+  plant_id?: string | null;
+  company_id?: string;
+}
+
+export function usePatchContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: ContractPatchPayload & { id: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH",
+        `/api/dashboard/contracts/${id}`,
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contracts-list"] });
+      qc.invalidateQueries({ queryKey: ["plant"] });
     },
   });
 }

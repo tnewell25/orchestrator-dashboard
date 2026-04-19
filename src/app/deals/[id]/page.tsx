@@ -17,12 +17,18 @@ import {
   useSuggestMeddic,
   useGenerateBrief,
   useContacts,
+  useCoSellers,
+  useCreateCoSeller,
+  usePatchCoSeller,
+  COSELLER_ROLES,
+  COSELLER_STATUSES,
   type DealDetailResponse,
   type MeddicData,
   type Stakeholder,
   type Meeting,
   type ActionItemData,
   type DealAuditItem,
+  type CoSellerItem,
 } from '@/lib/api'
 import { useConfirmDestroy } from '@/components/confirm-destroy'
 
@@ -1037,6 +1043,201 @@ function ActionItems({
   )
 }
 
+const COSELLER_ROLE_LABELS: Record<string, string> = {
+  oem_rep: 'OEM rep',
+  channel_partner: 'Channel partner',
+  si_partner: 'SI partner',
+  distributor: 'Distributor',
+  consultant: 'Consultant',
+  reseller: 'Reseller',
+}
+
+function CoSellersSection({ dealId }: { dealId: string }) {
+  const { data, isLoading } = useCoSellers(dealId)
+  const create = useCreateCoSeller(dealId)
+  const patch = usePatchCoSeller(dealId)
+  const remove = useDeleteEntity()
+  const [adding, setAdding] = useState(false)
+  const [orgName, setOrgName] = useState('')
+  const [role, setRole] = useState<string>('oem_rep')
+  const [contactQuery, setContactQuery] = useState('')
+  const [contactId, setContactId] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [commission, setCommission] = useState('')
+  const { data: contactResults } = useContacts(contactQuery)
+
+  const items = data ?? []
+  const totalCommission = items.reduce((s, x) => s + (x.commission_pct || 0), 0)
+
+  const submit = async () => {
+    if (!orgName.trim()) return
+    await create.mutateAsync({
+      org_name: orgName.trim(),
+      role,
+      contact_id: contactId || null,
+      commission_pct: Number(commission) || 0,
+    })
+    setOrgName(''); setRole('oem_rep'); setContactId(''); setContactName(''); setCommission('')
+    setAdding(false)
+  }
+
+  return (
+    <div>
+      {items.length > 0 && (
+        <p className="text-[11px] text-zinc-500 mb-2">
+          {items.length} partner{items.length !== 1 ? 's' : ''} · {totalCommission.toFixed(0)}% total commission
+        </p>
+      )}
+
+      {isLoading ? (
+        <p className="text-xs text-zinc-400 py-2">Loading...</p>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-zinc-400 py-2">No co-sellers on this deal.</p>
+      ) : (
+        <div className="space-y-1 mb-2">
+          {items.map((cs) => (
+            <CoSellerRow key={cs.id} cs={cs} dealId={dealId} onPatch={patch.mutate} onDelete={() => remove.mutate({ entity: 'co-sellers', id: cs.id })} />
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <div className="bg-zinc-50 border border-zinc-200 rounded p-2 mb-2 space-y-1.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-zinc-700">Add co-seller</span>
+            <button type="button" onClick={() => setAdding(false)} className="text-[11px] text-zinc-400 hover:text-zinc-600">
+              Cancel
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Org (Bosch, Honeywell, ...)"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              className="px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+            />
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+            >
+              {COSELLER_ROLES.map((r) => (
+                <option key={r} value={r}>{COSELLER_ROLE_LABELS[r]}</option>
+              ))}
+            </select>
+          </div>
+          {!contactId ? (
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search partner contact (optional)..."
+                value={contactQuery}
+                onChange={(e) => setContactQuery(e.target.value)}
+                className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+              />
+              {contactQuery && (contactResults ?? []).length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-10 bg-white border border-zinc-200 rounded shadow-md max-h-40 overflow-y-auto">
+                  {(contactResults ?? []).slice(0, 6).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { setContactId(c.id); setContactName(c.name); setContactQuery(''); }}
+                      className="w-full text-left px-2 py-1.5 text-xs hover:bg-zinc-50"
+                    >
+                      <span className="text-zinc-800 font-medium">{c.name}</span>
+                      {c.title && <span className="text-[11px] text-zinc-400 ml-2">{c.title}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-white border border-zinc-200 rounded px-2 py-1">
+              <span className="text-xs text-zinc-800">{contactName}</span>
+              <button type="button" onClick={() => { setContactId(''); setContactName(''); }} className="text-[11px] text-zinc-400 hover:text-zinc-600">
+                Change
+              </button>
+            </div>
+          )}
+          <input
+            type="number"
+            placeholder="Our commission % (optional)"
+            value={commission}
+            onChange={(e) => setCommission(e.target.value)}
+            className="w-full px-2 py-1 text-xs border border-zinc-200 rounded focus:outline-none focus:border-zinc-400"
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={create.isPending || !orgName.trim()}
+            className="w-full py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {create.isPending ? 'Adding...' : 'Add co-seller'}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+        >
+          + Add co-seller
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CoSellerRow({
+  cs, dealId: _dealId, onPatch, onDelete,
+}: {
+  cs: CoSellerItem
+  dealId: string
+  onPatch: (p: { id: string; status?: string }) => void
+  onDelete: () => void
+}) {
+  const statusColor =
+    cs.status === 'active' ? 'bg-emerald-50 text-emerald-700'
+    : cs.status === 'introduced' ? 'bg-blue-50 text-blue-700'
+    : cs.status === 'dormant' ? 'bg-amber-50 text-amber-700'
+    : 'bg-zinc-100 text-zinc-500'
+  return (
+    <div className="flex items-center gap-2 py-1.5 border-b border-zinc-100 last:border-0 group text-xs">
+      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide ${statusColor}`}>
+        {cs.status}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-zinc-800 font-medium truncate">
+          {cs.org_name}
+          {cs.contact_name && <span className="text-zinc-500 font-normal"> · {cs.contact_name}</span>}
+        </p>
+        <p className="text-[11px] text-zinc-500">
+          {COSELLER_ROLE_LABELS[cs.role] ?? cs.role}
+          {cs.commission_pct > 0 && ` · ${cs.commission_pct}% commission`}
+        </p>
+      </div>
+      <select
+        value={cs.status}
+        onChange={(e) => onPatch({ id: cs.id, status: e.target.value })}
+        className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] bg-transparent border border-zinc-200 rounded px-1 cursor-pointer"
+      >
+        {COSELLER_STATUSES.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-600 px-1"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
 function Section({
   title, children,
 }: {
@@ -1179,6 +1380,10 @@ export default function DealDetailPage({
 
           <Section title="Action Items">
             <ActionItems items={action_items} dealId={id} />
+          </Section>
+
+          <Section title="Co-sellers">
+            <CoSellersSection dealId={id} />
           </Section>
 
           {bids && bids.length > 0 && (

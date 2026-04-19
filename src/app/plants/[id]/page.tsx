@@ -138,7 +138,7 @@ export default function PlantDetailPage({
     );
   }
 
-  const { plant, deals, bids } = data;
+  const { plant, deals, bids, assets, contracts } = data;
   const onPatch = (p: Record<string, unknown>) => patch.mutate({ id, ...p });
 
   return (
@@ -263,6 +263,70 @@ export default function PlantDetailPage({
                   </div>
                   <span className="text-zinc-500 tabular-nums shrink-0">{fmt$(d.value_usd)}</span>
                 </Link>
+              ))
+            )}
+          </div>
+
+          <div className="bg-white rounded-lg border border-zinc-200 shadow-sm p-3">
+            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wide mb-2 px-1 flex items-center justify-between">
+              <span>Installed base ({assets.length})</span>
+              <Link href={`/assets`} className="text-[10px] font-normal normal-case tracking-normal text-blue-600 hover:text-blue-700">
+                view all
+              </Link>
+            </h2>
+            {assets.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-2 px-1">No assets tracked.</p>
+            ) : (
+              assets.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                      a.vendor === "us" ? "bg-emerald-50 text-emerald-700"
+                      : a.vendor === "competitor" ? "bg-red-50 text-red-700"
+                      : "bg-violet-50 text-violet-700"
+                    }`}>
+                      {a.vendor}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-zinc-800 truncate">{a.name}</p>
+                      <p className="text-[11px] text-zinc-500 truncate">
+                        {a.manufacturer}{a.model ? ` ${a.model}` : ""} · {a.asset_type}
+                      </p>
+                    </div>
+                  </div>
+                  {a.end_of_life_date && (
+                    <span className="text-[11px] text-zinc-500 tabular-nums shrink-0">
+                      EoL {fmtDate(a.end_of_life_date)}
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="bg-white rounded-lg border border-zinc-200 shadow-sm p-3">
+            <h2 className="text-xs font-semibold text-zinc-700 uppercase tracking-wide mb-2 px-1 flex items-center justify-between">
+              <span>Service contracts ({contracts.length})</span>
+              <Link href={`/contracts`} className="text-[10px] font-normal normal-case tracking-normal text-blue-600 hover:text-blue-700">
+                view all
+              </Link>
+            </h2>
+            {contracts.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-2 px-1">No contracts tracked.</p>
+            ) : (
+              contracts.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-zinc-800 truncate">{c.name}</p>
+                    <p className="text-[11px] text-zinc-500 truncate">{c.contract_type}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-zinc-700 tabular-nums">{fmt$(c.value_usd_annual)}/yr</p>
+                    {c.renewal_date && (
+                      <p className="text-[11px] text-zinc-500 tabular-nums">renew {fmtDate(c.renewal_date)}</p>
+                    )}
+                  </div>
+                </div>
               ))
             )}
           </div>
