@@ -76,7 +76,10 @@ export interface DealDetailResponse {
     next_step: string;
     notes: string;
     competitors: string;
+    company_id: string | null;
     company: string;
+    plant_id: string | null;
+    plant: string;
   };
   meddic: MeddicData;
   meddic_gaps: string[];
@@ -2102,5 +2105,41 @@ export function useCreateWinLoss() {
     mutationFn: (payload: { deal_id: string; outcome: string; winning_competitor?: string; primary_reason?: string; what_worked?: string; what_didnt?: string; lessons?: string; value_usd?: number }) =>
       apiWrite<{ id: string }>("POST", "/api/dashboard/win-loss", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["win-loss"] }),
+  });
+}
+
+// =====================================================================
+// Integrations
+// =====================================================================
+
+export interface IntegrationItem {
+  id: string;
+  name: string;
+  kind: string;
+  configured: boolean;
+  connected: boolean;
+  detail: string;
+  auth_url?: string | null;
+  redirect_uri?: string | null;
+}
+
+export function useIntegrations() {
+  return useQuery({
+    queryKey: ["integrations"],
+    queryFn: async () => {
+      const resp = await apiFetch<{ integrations: IntegrationItem[] }>("/api/dashboard/integrations");
+      return resp.integrations;
+    },
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useDisconnectMicrosoft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiWrite<{ ok: boolean }>("POST", "/api/dashboard/integrations/microsoft/disconnect"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["integrations"] }),
   });
 }

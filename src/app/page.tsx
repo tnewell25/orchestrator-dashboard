@@ -52,32 +52,34 @@ function DealCard({ deal }: { deal: PipelineDeal }) {
       className={dragging ? "opacity-40" : ""}
     >
       <Link href={`/deals/${deal.id}`} draggable={false}>
-        <div className="bg-white border border-slate-200 rounded p-2.5 hover:border-slate-300 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group">
-          <div className="flex items-start justify-between gap-1.5 mb-1">
-            <p className="text-xs font-medium text-slate-900 leading-tight truncate">
-              {deal.name}
-            </p>
-            <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
-              {formatCurrency(deal.value_usd)}
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 truncate">{deal.company}</p>
+        <div className="bg-white border border-slate-200 rounded p-2.5 hover:border-slate-400 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group">
+          {/* Title gets full width — value moves to bottom row so it never
+              fights the title for space. Industrial deal names are long. */}
+          <p className="text-[13px] font-semibold text-slate-900 leading-snug mb-1 break-words">
+            {deal.name}
+          </p>
+          {deal.company && (
+            <p className="text-[11px] text-slate-500 truncate mb-1.5">{deal.company}</p>
+          )}
           {deal.next_step && (
-            <div className="flex items-center gap-1 mt-1.5">
-              <ArrowRight size={10} className="text-slate-400 shrink-0" />
-              <p className="text-[11px] text-slate-400 truncate">
+            <div className="flex items-start gap-1 mb-1">
+              <ArrowRight size={10} className="text-slate-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-slate-500 line-clamp-2 leading-snug">
                 {deal.next_step}
               </p>
             </div>
           )}
-          {deal.close_date && (
-            <div className="flex items-center gap-1 mt-1">
-              <Calendar size={10} className="text-slate-400 shrink-0" />
-              <p className="text-[11px] text-slate-400">
+          <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
+            <span className="text-[13px] font-bold text-slate-900 tabular-nums">
+              {formatCurrency(deal.value_usd)}
+            </span>
+            {deal.close_date && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 tabular-nums">
+                <Calendar size={10} />
                 {formatDate(deal.close_date)}
-              </p>
-            </div>
-          )}
+              </span>
+            )}
+          </div>
         </div>
       </Link>
     </div>
@@ -244,7 +246,7 @@ function NewDealButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:border-slate-300 transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded transition-colors"
       >
         <Plus size={12} />
         New deal

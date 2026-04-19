@@ -21,6 +21,7 @@ import {
   Trophy,
   Menu,
   X,
+  Plug,
 } from "lucide-react";
 
 type NavItem = { href: string; label: string; icon: typeof Menu };
@@ -125,7 +126,8 @@ export function Sidebar() {
         <NavGroup label="Library" items={libraryItems} />
       </nav>
 
-      <div className="px-2 py-2 border-t border-zinc-200">
+      <div className="px-2 py-2 border-t border-slate-200 space-y-0.5">
+        <NavLink item={{ href: "/settings/integrations", label: "Integrations", icon: Plug }} />
         <NavLink item={{ href: "/usage", label: "Usage", icon: Gauge }} />
       </div>
     </>

@@ -174,44 +174,48 @@ function HealthBar({ dealId }: { dealId: string }) {
   const { data } = useDealHealth(dealId)
   if (!data) return null
 
+  // Distinct background blocks — clearer separation than colored text in a row.
   const bucketStyle =
     data.forecast_bucket === 'commit'
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
       : data.forecast_bucket === 'best_case'
-        ? 'bg-amber-50 text-amber-700 border-amber-200'
-        : 'bg-zinc-100 text-zinc-700 border-zinc-200'
+        ? 'bg-amber-50 text-amber-800 border-amber-200'
+        : 'bg-slate-100 text-slate-700 border-slate-200'
   const bucketLabel =
     data.forecast_bucket === 'commit' ? 'Commit'
     : data.forecast_bucket === 'best_case' ? 'Best Case'
     : 'Pipeline'
 
-  const meddicTone = data.meddic_pct >= 70 ? 'text-emerald-700' : data.meddic_pct >= 40 ? 'text-amber-700' : 'text-red-600'
-  const champTone = data.champion_score >= 70 ? 'text-emerald-700' : data.champion_score >= 40 ? 'text-amber-700' : 'text-red-600'
-  const slipTone = data.slip_risk >= 70 ? 'text-red-600' : data.slip_risk >= 40 ? 'text-amber-700' : 'text-emerald-700'
+  // Use neutral amber for "missing/empty" — red is reserved for actual problems.
+  const meddicTone = data.meddic_pct >= 70 ? 'text-emerald-700' : data.meddic_pct >= 40 ? 'text-amber-700' : 'text-slate-500'
+  const champTone = data.champion_score >= 70 ? 'text-emerald-700' : data.champion_score >= 40 ? 'text-amber-700' : 'text-slate-500'
+  const slipTone = data.slip_risk >= 70 ? 'text-red-700' : data.slip_risk >= 40 ? 'text-amber-700' : 'text-emerald-700'
 
   return (
-    <div className="flex items-center flex-wrap gap-2 py-3 border-b border-zinc-200 text-[11px]">
-      <span className={`px-2 py-0.5 rounded font-medium border ${bucketStyle}`}>
-        {bucketLabel}
-      </span>
-      <span className={meddicTone}>MEDDIC {data.meddic_pct}%</span>
-      <span className={champTone} title={data.champion_detail}>
-        Champion {data.champion_score}/100
-      </span>
-      <span className={slipTone} title="Probability of slipping past the close date">
-        Slip {data.slip_risk}%
-      </span>
-      {data.meddic_missing.length > 0 && (
-        <span className="text-zinc-400">
-          missing: {data.meddic_missing.slice(0, 3).join(', ')}
+    <div className="py-3 border-b border-slate-200">
+      <div className="flex items-center flex-wrap gap-2 text-[11px]">
+        <span className={`px-2 py-0.5 rounded font-semibold uppercase tracking-wide border ${bucketStyle}`}>
+          {bucketLabel}
         </span>
-      )}
-      {data.reasons.length > 0 && (
-        <span className="text-zinc-500 ml-auto truncate max-w-md">
-          {data.reasons.join(' · ')}
-        </span>
-      )}
+        <Metric label="MEDDIC" value={`${data.meddic_pct}%`} tone={meddicTone} />
+        <Metric label="Champion" value={`${data.champion_score}/100`} tone={champTone} title={data.champion_detail} />
+        <Metric label="Slip" value={`${data.slip_risk}%`} tone={slipTone} title="Probability of slipping past the close date" />
+        {data.reasons.length > 0 && (
+          <span className="text-slate-500 ml-auto truncate max-w-md text-[11px]">
+            {data.reasons.join(' · ')}
+          </span>
+        )}
+      </div>
     </div>
+  )
+}
+
+function Metric({ label, value, tone, title }: { label: string; value: string; tone: string; title?: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1" title={title}>
+      <span className="text-[10px] uppercase tracking-wider text-slate-400">{label}</span>
+      <span className={`text-[12px] font-semibold tabular-nums ${tone}`}>{value}</span>
+    </span>
   )
 }
 
@@ -226,13 +230,13 @@ function DealHeader({
   onGenerateBrief: () => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 pb-4 border-b border-zinc-200">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2.5">
+    <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <EditableText
             value={deal.name}
             onSave={(name) => onPatch({ name })}
-            className="text-base font-semibold text-zinc-900"
+            className="text-lg font-bold text-slate-900 tracking-tight"
           />
           <select
             value={deal.stage}
@@ -244,20 +248,40 @@ function DealHeader({
             ))}
           </select>
         </div>
-        <p className="mt-0.5 text-xs text-zinc-500">{deal.company}</p>
+        {/* Breadcrumb-style account context — links so user can navigate up. */}
+        {(deal.company || deal.plant) && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+            {deal.company_id ? (
+              <Link href={`/companies/${deal.company_id}`} className="hover:text-slate-800 hover:underline">
+                {deal.company}
+              </Link>
+            ) : (
+              deal.company && <span>{deal.company}</span>
+            )}
+            {deal.plant && (
+              <>
+                <span className="text-slate-300">/</span>
+                {deal.plant_id ? (
+                  <Link href={`/plants/${deal.plant_id}`} className="hover:text-slate-800 hover:underline">
+                    {deal.plant}
+                  </Link>
+                ) : (
+                  <span>{deal.plant}</span>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
-      <div className="flex flex-col items-end gap-1 shrink-0">
+      <div className="flex flex-col items-end gap-2 shrink-0">
         <div className="text-right">
-          <EditableText
-            value={String(deal.value_usd || 0)}
-            onSave={(v) => onPatch({ value_usd: Number(v) || 0 })}
-            className="text-sm font-semibold text-zinc-900 tabular-nums"
+          {/* Single value display — formatted; click to edit raw. */}
+          <CurrencyEditor
+            value={deal.value_usd}
+            onSave={(n) => onPatch({ value_usd: n })}
           />
-          <span className="text-sm font-semibold text-zinc-900 tabular-nums ml-1">
-            ({formatCurrency(deal.value_usd)})
-          </span>
           {deal.close_date && (
-            <p className="mt-0.5 text-[11px] text-zinc-400">
+            <p className="mt-0.5 text-[11px] text-slate-400">
               Close {formatDate(deal.close_date)}
             </p>
           )}
@@ -266,21 +290,57 @@ function DealHeader({
           <button
             type="button"
             onClick={onGenerateBrief}
-            className="px-2 py-0.5 text-[11px] font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded"
-            title="Generate a meeting-prep one-pager from current deal context"
+            className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded transition-colors"
+            title="Generate a meeting-prep one-pager"
           >
             Brief
           </button>
           <button
             type="button"
             onClick={onDelete}
-            className="px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 rounded"
+            className="h-7 px-2 text-[11px] text-slate-500 hover:text-red-600 hover:bg-slate-50 rounded transition-colors"
           >
             Delete
           </button>
         </div>
       </div>
     </div>
+  )
+}
+
+function CurrencyEditor({ value, onSave }: { value: number; onSave: (n: number) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(value || 0))
+  const commit = () => {
+    const n = Number(draft) || 0
+    if (n !== value) onSave(n)
+    setEditing(false)
+  }
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') { setDraft(String(value || 0)); setEditing(false) }
+        }}
+        className="w-32 text-right text-base font-bold text-slate-900 tabular-nums border border-slate-300 rounded px-2 py-0.5 focus:outline-none focus:border-slate-500"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => { setDraft(String(value || 0)); setEditing(true) }}
+      className="text-base font-bold text-slate-900 tabular-nums hover:bg-slate-100 rounded px-1.5 py-0.5 -mx-1.5 -my-0.5 transition-colors"
+      title="Click to edit"
+    >
+      {formatCurrency(value)}
+    </button>
   )
 }
 
@@ -321,26 +381,26 @@ function MeddicScorecard({
           return (
             <div
               key={f.key}
-              className={`px-2.5 py-2 rounded border text-xs ${
+              className={`px-2.5 py-2 rounded border text-xs transition-colors ${
                 isFilled
-                  ? 'border-emerald-200 bg-emerald-50/50'
-                  : 'border-red-200 bg-red-50/40'
+                  ? 'border-emerald-200 bg-emerald-50/40'
+                  : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
               }`}
             >
-              <div className="text-[11px] font-medium text-zinc-700 mb-0.5">
+              <div className={`text-[11px] font-semibold mb-0.5 ${isFilled ? 'text-slate-700' : 'text-slate-500'}`}>
                 {f.label}
               </div>
               {f.editable ? (
                 <EditableText
                   value={value}
-                  placeholder={isFilled ? '' : 'Missing — click to add'}
+                  placeholder={isFilled ? '' : 'Click to add'}
                   onSave={(next) => onPatch({ [f.key]: next })}
                   multiline
                   className="text-[11px] block"
                 />
               ) : (
-                <span className={`text-[11px] block ${isFilled ? 'text-zinc-600' : 'text-red-500'}`}>
-                  {value || 'Missing'}
+                <span className={`text-[11px] block ${isFilled ? 'text-slate-700' : 'text-slate-400 italic'}`}>
+                  {value || 'Not set'}
                 </span>
               )}
             </div>
