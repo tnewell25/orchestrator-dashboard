@@ -17,13 +17,13 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={`text-center py-12 px-6 ${className}`}>
-      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-zinc-100 mb-3">
-        <Icon size={20} className="text-zinc-400" strokeWidth={1.6} />
+    <div className={`text-center py-14 px-6 ${className}`}>
+      <div className="inline-flex items-center justify-center w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 mb-4">
+        <Icon size={22} className="text-slate-400" strokeWidth={1.5} />
       </div>
-      <p className="text-sm font-medium text-zinc-700 mb-1">{title}</p>
+      <p className="text-sm font-semibold text-slate-800 mb-1">{title}</p>
       {description && (
-        <p className="text-xs text-zinc-500 max-w-sm mx-auto leading-relaxed">
+        <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
           {description}
         </p>
       )}

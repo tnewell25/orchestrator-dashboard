@@ -65,16 +65,20 @@ export function Sidebar() {
     return (
       <Link
         href={item.href}
-        className={`group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150 ${
+        className={`group relative flex items-center gap-2.5 px-2.5 py-2 rounded text-[13px] font-medium transition-colors duration-150 ${
           active
-            ? "bg-zinc-900 text-white shadow-sm"
-            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+            ? "bg-slate-900 text-white"
+            : "text-slate-700 hover:text-slate-900 hover:bg-slate-100"
         }`}
       >
+        {/* Subtle active indicator bar — Honeywell-style left rule */}
+        {active && (
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-white rounded-r" />
+        )}
         <Icon
           size={15}
-          strokeWidth={active ? 2 : 1.7}
-          className={active ? "text-white" : "text-zinc-500 group-hover:text-zinc-700"}
+          strokeWidth={active ? 2.2 : 1.7}
+          className={active ? "text-white" : "text-slate-500 group-hover:text-slate-800"}
         />
         <span className="truncate">{item.label}</span>
       </Link>
@@ -96,12 +100,12 @@ export function Sidebar() {
 
   const sidebarBody = (
     <>
-      <div className="px-4 py-3.5 border-b border-zinc-200 flex items-center justify-between bg-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-zinc-800 to-zinc-950 flex items-center justify-center text-white text-[10px] font-bold tracking-tight">
+      <div className="px-4 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded bg-slate-900 flex items-center justify-center text-white text-[11px] font-bold tracking-tight shadow-sm">
             O
           </div>
-          <h1 className="text-sm font-semibold text-zinc-900 tracking-tight">
+          <h1 className="text-sm font-bold text-slate-900 tracking-tight">
             Orchestrator
           </h1>
         </div>
@@ -149,7 +153,7 @@ export function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 w-[220px] bg-white border-r border-zinc-200 flex flex-col shrink-0 h-screen transform transition-transform duration-200 ${
+        className={`fixed lg:sticky top-0 left-0 z-40 w-[220px] bg-white border-r border-slate-200 flex flex-col shrink-0 h-screen transform transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >

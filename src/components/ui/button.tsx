@@ -5,23 +5,26 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "soft";
 type Size = "xs" | "sm" | "md";
 
+// Deep navy primary, restrained edges, no soft shadows — the
+// Bosch/Honeywell aesthetic: enterprise gravitas over consumer SaaS.
 const VARIANT: Record<Variant, string> = {
   primary:
-    "bg-zinc-900 text-white hover:bg-zinc-800 active:bg-zinc-950 shadow-sm border border-transparent",
+    "bg-slate-900 text-white hover:bg-slate-800 active:bg-black border border-transparent",
   secondary:
-    "bg-white text-zinc-700 border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 shadow-sm",
+    "bg-white text-slate-700 border border-slate-300 hover:border-slate-400 hover:bg-slate-50",
   ghost:
-    "bg-transparent text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 border border-transparent",
+    "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent",
   danger:
-    "bg-red-600 text-white hover:bg-red-700 border border-transparent shadow-sm",
+    "bg-red-700 text-white hover:bg-red-800 border border-transparent",
   soft:
-    "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-transparent",
+    "bg-slate-100 text-slate-800 hover:bg-slate-200 border border-transparent",
 };
 
+// Slightly squarer corners. Industrial dials/control panels read flatter.
 const SIZE: Record<Size, string> = {
-  xs: "h-7 px-2 text-[11px] gap-1 rounded",
-  sm: "h-8 px-2.5 text-xs gap-1.5 rounded-md",
-  md: "h-9 px-3.5 text-xs gap-1.5 rounded-md",
+  xs: "h-7 px-2.5 text-[11px] gap-1 rounded",
+  sm: "h-8 px-3 text-xs gap-1.5 rounded",
+  md: "h-9 px-4 text-[13px] gap-2 rounded",
 };
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
