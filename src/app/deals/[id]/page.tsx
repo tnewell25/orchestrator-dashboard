@@ -31,6 +31,29 @@ import {
   type CoSellerItem,
 } from '@/lib/api'
 import { useConfirmDestroy } from '@/components/confirm-destroy'
+import { AudioCapture } from '@/components/audio-capture'
+
+const MEETING_TYPE_LABELS: Record<string, string> = {
+  discovery: 'Discovery',
+  technical_deep_dive: 'Technical',
+  pricing: 'Pricing',
+  negotiation: 'Negotiation',
+  status: 'Status',
+  kickoff: 'Kickoff',
+  closing: 'Closing',
+  other: 'Other',
+}
+
+const MEETING_TYPE_COLORS: Record<string, string> = {
+  discovery: 'bg-blue-50 text-blue-800 border-blue-200',
+  technical_deep_dive: 'bg-violet-50 text-violet-800 border-violet-200',
+  pricing: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  negotiation: 'bg-amber-50 text-amber-800 border-amber-200',
+  status: 'bg-slate-100 text-slate-700 border-slate-200',
+  kickoff: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+  closing: 'bg-rose-50 text-rose-800 border-rose-200',
+  other: 'bg-slate-100 text-slate-600 border-slate-200',
+}
 
 const STAGE_ORDER = [
   'prospect', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost',
@@ -824,10 +847,20 @@ function MeetingTimeline({ meetings, dealId }: { meetings: Meeting[]; dealId: st
             <div key={m.id} className="py-2 border-b border-zinc-100 last:border-0 group">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">
                       {formatDate(m.date)}
                     </span>
+                    {m.meeting_type && m.meeting_type !== 'other' && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border ${MEETING_TYPE_COLORS[m.meeting_type] ?? MEETING_TYPE_COLORS.other}`}>
+                        {MEETING_TYPE_LABELS[m.meeting_type] ?? m.meeting_type}
+                      </span>
+                    )}
+                    {m.has_transcript && (
+                      <span className="text-[10px] text-emerald-700" title="Full transcript captured">
+                        ◉ transcribed
+                      </span>
+                    )}
                     {m.attendees && (
                       <span className="text-[11px] text-zinc-400 truncate">{m.attendees}</span>
                     )}
@@ -1435,6 +1468,7 @@ export default function DealDetailPage({
           </Section>
 
           <Section title="Meetings">
+            <AudioCapture dealId={id} />
             <MeetingTimeline meetings={meetings} dealId={id} />
           </Section>
 

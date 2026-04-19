@@ -48,6 +48,83 @@ export interface Meeting {
   summary: string;
   attendees: string;
   decisions: string;
+  meeting_type?: string;
+  sentiment?: string;
+  audio_processing_status?: string;
+  competitors_mentioned?: string;
+  pricing_mentioned?: string;
+  has_transcript?: boolean;
+}
+
+export interface AudioProcessResult {
+  meeting_id: string;
+  transcript: string;
+  status: string;
+  extracted: {
+    meeting_type?: string;
+    sentiment?: string;
+    summary?: string;
+    key_decisions?: string[];
+    action_items?: { description: string; owner: string; due_hint: string }[];
+    meddic_deltas?: {
+      metrics?: string | null;
+      decision_criteria?: string | null;
+      decision_process?: string | null;
+      paper_process?: string | null;
+      pain?: string | null;
+    };
+    competitors_mentioned?: string[];
+    pricing_mentioned?: string;
+    follow_up_concern?: string;
+    attendees_mentioned?: string[];
+  };
+}
+
+export const MEETING_TYPES = [
+  "discovery", "technical_deep_dive", "pricing", "negotiation",
+  "status", "kickoff", "closing", "other",
+] as const;
+
+export function useUploadDealAudio(dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file, attendees }: { file: File; attendees?: string }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (attendees) fd.append("attendees", attendees);
+      const url = new URL(`/api/dashboard/deals/${dealId}/audio`, BASE_URL);
+      const res = await fetch(url.toString(), { method: "POST", body: fd });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => res.statusText);
+        throw new Error(`upload failed (${res.status}): ${txt.slice(0, 200)}`);
+      }
+      return res.json() as Promise<AudioProcessResult>;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export function useUploadMeetingAudio(meetingId: string, dealId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      const url = new URL(`/api/dashboard/meetings/${meetingId}/audio`, BASE_URL);
+      const res = await fetch(url.toString(), { method: "POST", body: fd });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => res.statusText);
+        throw new Error(`upload failed (${res.status}): ${txt.slice(0, 200)}`);
+      }
+      return res.json() as Promise<AudioProcessResult>;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deal", dealId] });
+    },
+  });
 }
 
 export interface ActionItemData {
