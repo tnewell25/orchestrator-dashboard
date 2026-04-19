@@ -529,7 +529,15 @@ type DeleteEntity =
   | "specs"
   | "assets"
   | "co-sellers"
-  | "contracts";
+  | "contracts"
+  | "jobs"
+  | "daily-logs"
+  | "change-orders"
+  | "punchlist"
+  | "competitors"
+  | "battle-cards"
+  | "proposals"
+  | "win-loss";
 
 const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   deals: [["pipeline"], ["analytics"], ["activity"]],
@@ -544,6 +552,14 @@ const DELETE_INVALIDATE: Record<DeleteEntity, string[][]> = {
   assets: [["assets-list"], ["plant"]],
   "co-sellers": [["co-sellers"]],
   contracts: [["contracts-list"], ["plant"]],
+  jobs: [["jobs-list"]],
+  "daily-logs": [["job"]],
+  "change-orders": [["job"]],
+  punchlist: [["job"]],
+  competitors: [["competitors"]],
+  "battle-cards": [["battle-cards"]],
+  proposals: [["proposals"]],
+  "win-loss": [["win-loss"]],
 };
 
 export function useDeleteEntity() {
@@ -1806,5 +1822,285 @@ export function usePatchContract() {
       qc.invalidateQueries({ queryKey: ["contracts-list"] });
       qc.invalidateQueries({ queryKey: ["plant"] });
     },
+  });
+}
+
+// =====================================================================
+// PR9 — Jobs + Daily Logs + Change Orders + Punchlist
+// =====================================================================
+
+export const JOB_STAGES = [
+  "scheduled", "in_progress", "punch", "inspected", "closed_out", "warranty",
+] as const;
+export const CO_STATUSES = [
+  "draft", "pm_review", "submitted", "approved", "rejected", "invoiced",
+] as const;
+export const PUNCH_STATUSES = ["open", "in_progress", "done", "waived"] as const;
+
+export interface JobListItem {
+  id: string; name: string; job_number: string;
+  stage: string; contract_value_usd: number;
+  scheduled_start: string | null; scheduled_end: string | null;
+  company_id: string | null; company: string;
+  site_address: string;
+}
+
+export interface JobDetailResponse {
+  job: {
+    id: string; name: string; job_number: string; stage: string;
+    site_address: string; gc_name: string; scope: string;
+    contract_value_usd: number; labor_budget_hours: number; material_budget_usd: number;
+    scheduled_start: string | null; scheduled_end: string | null;
+    actual_start: string | null; actual_end: string | null; notes: string;
+    company_id: string | null; company: string;
+    deal_id: string | null; deal: string;
+    bid_id: string | null; bid: string;
+    project_manager_id: string | null; project_manager: string;
+    foreman_id: string | null; foreman: string;
+  };
+  daily_logs: {
+    id: string; log_date: string; summary: string; work_performed: string;
+    issues: string; hours_total: number; next_day_plan: string;
+  }[];
+  change_orders: {
+    id: string; co_number: string; status: string; description: string;
+    price_usd: number; labor_hours: number;
+    approved_at: string | null; approver: string;
+  }[];
+  punchlist: {
+    id: string; description: string; location: string; status: string;
+    completed_at: string | null;
+  }[];
+}
+
+export function useJobsList(filters?: { stage?: string; company_id?: string }) {
+  return useQuery({
+    queryKey: ["jobs-list", filters?.stage ?? "", filters?.company_id ?? ""],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters?.stage) params.stage = filters.stage;
+      if (filters?.company_id) params.company_id = filters.company_id;
+      const resp = await apiFetch<{ jobs: JobListItem[] }>(
+        "/api/dashboard/jobs",
+        Object.keys(params).length ? params : undefined,
+      );
+      return resp.jobs;
+    },
+    staleTime: 15_000,
+  });
+}
+
+export function useJobDetail(id: string) {
+  return useQuery({
+    queryKey: ["job", id],
+    queryFn: () => apiFetch<JobDetailResponse>(`/api/dashboard/jobs/${id}`),
+    enabled: !!id,
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useCreateJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; company_id?: string | null; deal_id?: string | null; bid_id?: string | null; job_number?: string; stage?: string; site_address?: string; gc_name?: string; scope?: string; contract_value_usd?: number; labor_budget_hours?: number; material_budget_usd?: number; scheduled_start?: string | null; scheduled_end?: string | null; notes?: string }) =>
+      apiWrite<{ id: string; name: string }>("POST", "/api/dashboard/jobs", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs-list"] }),
+  });
+}
+
+export function usePatchJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; name?: string; stage?: string; scope?: string; site_address?: string; gc_name?: string; contract_value_usd?: number; scheduled_start?: string | null; scheduled_end?: string | null; actual_start?: string | null; actual_end?: string | null; notes?: string; job_number?: string }) =>
+      apiWrite<{ id: string; updated: boolean }>(
+        "PATCH", `/api/dashboard/jobs/${id}`, payload,
+      ),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["job", vars.id] });
+      qc.invalidateQueries({ queryKey: ["jobs-list"] });
+    },
+  });
+}
+
+export function useCreateDailyLog(jobId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { log_date?: string | null; summary?: string; work_performed?: string; issues?: string; hours_total?: number; next_day_plan?: string }) =>
+      apiWrite<{ id: string }>("POST", `/api/dashboard/jobs/${jobId}/daily-logs`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job", jobId] }),
+  });
+}
+
+export function useCreateChangeOrder(jobId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { description: string; co_number?: string; price_usd?: number; labor_hours?: number; status?: string }) =>
+      apiWrite<{ id: string }>("POST", `/api/dashboard/jobs/${jobId}/change-orders`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job", jobId] }),
+  });
+}
+
+export function usePatchChangeOrder(jobId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; status?: string; approver?: string; description?: string; price_usd?: number }) =>
+      apiWrite<{ id: string }>("PATCH", `/api/dashboard/change-orders/${id}`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job", jobId] }),
+  });
+}
+
+export function useCreatePunch(jobId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { description: string; location?: string }) =>
+      apiWrite<{ id: string }>("POST", `/api/dashboard/jobs/${jobId}/punchlist`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job", jobId] }),
+  });
+}
+
+export function usePatchPunch(jobId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; status?: string; description?: string; location?: string }) =>
+      apiWrite<{ id: string }>("PATCH", `/api/dashboard/punchlist/${id}`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job", jobId] }),
+  });
+}
+
+// =====================================================================
+// PR10 — Competitors + Battle Cards + Proposals + Win/Loss
+// =====================================================================
+
+export interface CompetitorItem {
+  id: string; name: string; aliases: string;
+  strengths: string; weaknesses: string; pricing_notes: string;
+  battle_card_count: number;
+}
+
+export function useCompetitors() {
+  return useQuery({
+    queryKey: ["competitors"],
+    queryFn: async () => {
+      const resp = await apiFetch<{ competitors: CompetitorItem[] }>("/api/dashboard/competitors");
+      return resp.competitors;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateCompetitor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; strengths?: string; weaknesses?: string; pricing_notes?: string; aliases?: string }) =>
+      apiWrite<{ id: string; name: string }>("POST", "/api/dashboard/competitors", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["competitors"] }),
+  });
+}
+
+export function usePatchCompetitor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; name?: string; strengths?: string; weaknesses?: string; pricing_notes?: string; aliases?: string }) =>
+      apiWrite<{ id: string }>("PATCH", `/api/dashboard/competitors/${id}`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["competitors"] }),
+  });
+}
+
+export interface BattleCardItem {
+  id: string; situation: string; content: string; created_at: string;
+}
+
+export function useBattleCards(compId: string) {
+  return useQuery({
+    queryKey: ["battle-cards", compId],
+    queryFn: async () => {
+      const resp = await apiFetch<{ battle_cards: BattleCardItem[] }>(
+        `/api/dashboard/competitors/${compId}/battle-cards`,
+      );
+      return resp.battle_cards;
+    },
+    enabled: !!compId,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateBattleCard(compId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { situation?: string; content: string }) =>
+      apiWrite<{ id: string }>("POST", `/api/dashboard/competitors/${compId}/battle-cards`, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["battle-cards", compId] }),
+  });
+}
+
+export interface ProposalItem {
+  id: string; title: string; section_type: string;
+  content: string; tags: string;
+  source_deal_id: string | null;
+}
+
+export const PROPOSAL_SECTION_TYPES = [
+  "intro", "scope", "pricing", "warranty", "schedule",
+  "compliance", "qa", "bio", "other",
+] as const;
+
+export function useProposals(filters?: { section_type?: string; q?: string }) {
+  return useQuery({
+    queryKey: ["proposals", filters?.section_type ?? "", filters?.q ?? ""],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (filters?.section_type) params.section_type = filters.section_type;
+      if (filters?.q) params.q = filters.q;
+      const resp = await apiFetch<{ proposals: ProposalItem[] }>(
+        "/api/dashboard/proposals",
+        Object.keys(params).length ? params : undefined,
+      );
+      return resp.proposals;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { title: string; section_type?: string; content: string; tags?: string }) =>
+      apiWrite<{ id: string }>("POST", "/api/dashboard/proposals", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["proposals"] }),
+  });
+}
+
+export interface WinLossRecord {
+  id: string; outcome: string;
+  winning_competitor: string; primary_reason: string;
+  what_worked: string; what_didnt: string; lessons: string;
+  value_usd: number; deal_id: string | null; deal_name: string;
+  created_at: string;
+}
+
+export interface WinLossResponse {
+  stats: {
+    total: number; won: number; lost: number;
+    win_rate: number; total_value: number;
+    won_value: number; lost_value: number;
+  };
+  records: WinLossRecord[];
+}
+
+export function useWinLoss() {
+  return useQuery({
+    queryKey: ["win-loss"],
+    queryFn: () => apiFetch<WinLossResponse>("/api/dashboard/win-loss"),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateWinLoss() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { deal_id: string; outcome: string; winning_competitor?: string; primary_reason?: string; what_worked?: string; what_didnt?: string; lessons?: string; value_usd?: number }) =>
+      apiWrite<{ id: string }>("POST", "/api/dashboard/win-loss", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["win-loss"] }),
   });
 }

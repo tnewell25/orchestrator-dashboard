@@ -182,8 +182,8 @@ export default function PipelinePage() {
   const stats = analytics.data;
 
   return (
-    <div className="p-4 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3">
+    <div className="p-3 sm:p-4 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-3 relative">
         <h1 className="text-sm font-semibold text-slate-800">Pipeline</h1>
         <NewDealButton />
       </div>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { FileText, Plus, Loader2 } from "lucide-react";
 import { useBidsList, useCreateBid, useCompanies } from "@/lib/api";
+import { downloadCsv } from "@/lib/csv";
 
 const STAGE_OPTIONS = [
   { value: "", label: "All" },
@@ -85,18 +86,36 @@ export default function BidsPage() {
       <div className="max-w-5xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-sm font-semibold text-zinc-800">Bids / RFPs</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] text-zinc-400 tabular-nums">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-zinc-400 tabular-nums hidden sm:inline">
               {bids.length} {bids.length === 1 ? "bid" : "bids"}
             </span>
+            {bids.length > 0 && (
+              <button
+                type="button"
+                onClick={() => downloadCsv(`bids-${new Date().toISOString().slice(0, 10)}`, bids, [
+                  { key: "name", header: "Name" },
+                  { key: "company", header: "Company" },
+                  { key: "stage", header: "Stage" },
+                  { key: "value_usd", header: "Value (USD)" },
+                  { key: "submission_deadline", header: "Submission deadline" },
+                  { key: "qa_deadline", header: "Q&A deadline" },
+                  { key: "deal", header: "Deal" },
+                  { key: "rfp_url", header: "RFP URL" },
+                ])}
+                className="px-2 py-1 text-[11px] text-zinc-700 hover:bg-zinc-100 rounded border border-zinc-200"
+              >
+                CSV
+              </button>
+            )}
             {!adding && (
               <button
                 type="button"
                 onClick={() => setAdding(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
               >
                 <Plus size={12} />
-                New bid
+                New
               </button>
             )}
           </div>

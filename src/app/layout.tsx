@@ -27,7 +27,9 @@ export default function RootLayout({
       <body className="h-full flex">
         <Providers>
           <Sidebar />
-          <main className="flex-1 overflow-auto">{children}</main>
+          {/* Top padding on mobile reserves space for the hamburger trigger.
+              Resets to 0 on lg breakpoint where the static sidebar takes over. */}
+          <main className="flex-1 overflow-auto pt-14 lg:pt-0">{children}</main>
           <ChatDrawer />
           <CommandPalette />
         </Providers>
